@@ -2,6 +2,7 @@ package persistence
 
 import (
 	"encoding/hex"
+	"github.com/pokt-network/pocket/logger"
 	"log"
 	"math/big"
 
@@ -29,6 +30,7 @@ func (m *persistenceModule) populateGenesisState(state *genesis.GenesisState) {
 		return nil
 	}
 
+	logger.Global.Debug().Msg("populateGenesisState")
 	rwCtx, err := m.NewRWContext(0)
 	if err != nil {
 		m.logger.Fatal().Err(err).Msg("an error occurred creating the rwContext for the genesis state")

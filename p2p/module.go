@@ -382,6 +382,16 @@ func (m *p2pModule) readStream(stream libp2pNetwork.Stream) {
 		return
 	}
 
+	// TODO: remove
+	remoteMultiAddr := stream.Conn().RemoteMultiaddr()
+	selfMultiAddr, err := m.getMultiaddr()
+	if err != nil {
+		panic(fmt.Errorf("getting self multiaddr: %w", err).(any))
+	}
+	m.logger.Debug().Fields(map[string]any{
+		"self multiaddr": selfMultiAddr,
+		"target multiaddr": remoteMultiAddr,
+	}).Msg("INCOMING MSG")
 	if err := m.handleNetworkData(data); err != nil {
 		m.logger.Error().Err(err).Msg("handling network data")
 	}

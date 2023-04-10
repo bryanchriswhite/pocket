@@ -160,6 +160,14 @@ func (n *rainTreeNetwork) networkSendInternal(data []byte, address cryptoPocket.
 		return fmt.Errorf("no known peer with pokt address %s", address)
 	}
 
+	n.logger.Debug().Fields(map[string]any{
+		"self multiaddr": n.host.Addrs(),
+		"target service URL": peer.GetServiceURL(),
+		"target multiaddr": peer.(*typesP2P.NetworkPeer).Multiaddr,
+	}).Msg("OUTGOING MSG")
+
+	utils.PrintPStore(n.peersManager.GetPeerstore())
+
 	if err := utils.Libp2pSendToPeer(n.host, data, peer); err != nil {
 		n.logger.Debug().Err(err).Msg("from libp2pSendInternal")
 		return err

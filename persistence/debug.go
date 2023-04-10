@@ -2,6 +2,7 @@ package persistence
 
 import (
 	"crypto/sha256"
+	"github.com/pokt-network/pocket/logger"
 	"runtime/debug"
 
 	"github.com/celestiaorg/smt"
@@ -62,6 +63,7 @@ func (m *persistenceModule) showLatestBlockInStore(_ *messaging.DebugMessage) {
 
 // TECHDEBT: Make sure this is atomic
 func (m *persistenceModule) clearAllState(_ *messaging.DebugMessage) error {
+	logger.Global.Debug().Msg("clearAllState")
 	rwCtx, err := m.NewRWContext(-1)
 	if err != nil {
 		return err
