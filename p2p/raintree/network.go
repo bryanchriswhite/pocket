@@ -299,6 +299,10 @@ func (n *rainTreeNetwork) setupDependencies() error {
 		return err
 	}
 
+	// TODO: remove `PrintPStore`
+	logger.Global.Debug().Msg("setupDependencies")
+	utils.PrintPStore(pstore)
+
 	if err := utils.PopulateLibp2pHost(n.host, pstore); err != nil {
 		return err
 	}

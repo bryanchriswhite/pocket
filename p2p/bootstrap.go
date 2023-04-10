@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/csv"
 	"fmt"
+	"github.com/pokt-network/pocket/logger"
+	"github.com/pokt-network/pocket/p2p/utils"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -73,6 +75,9 @@ func (m *p2pModule) bootstrap() error {
 			continue
 		}
 	}
+
+	logger.Global.Debug().Msg("bootstrapping")
+	utils.PrintPStore(pstore)
 
 	for _, peer := range pstore.GetPeerList() {
 		m.logger.Debug().Str("address", peer.GetAddress().String()).Msg("Adding peer to network")

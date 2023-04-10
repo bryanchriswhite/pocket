@@ -3,6 +3,7 @@ package utils
 import (
 	"context"
 	"fmt"
+	"github.com/pokt-network/pocket/logger"
 	"time"
 
 	libp2pHost "github.com/libp2p/go-libp2p/core/host"
@@ -98,4 +99,22 @@ func Libp2pSendToPeer(host libp2pHost.Host, data []byte, peer typesP2P.Peer) err
 	}
 
 	return stream.CloseWrite()
+}
+
+// TODO: remove me - used for debugging only
+func PrintPStore(pstore typesP2P.Peerstore) {
+	mapPStore, ok := pstore.(typesP2P.PeerAddrMap)
+	if !ok {
+		panic(fmt.Sprintf("unexpected pstore type: %T", pstore))
+	}
+
+	count := 0
+	for poktAddrStr, peer := range mapPStore {
+		logger.Global.Debug().Fields(map[string]any{
+			"poktAddr":   poktAddrStr,
+			"serviceURL": peer.GetServiceURL(),
+		}).Msgf("peer %d", count)
+		count++
+	}
+
 }
