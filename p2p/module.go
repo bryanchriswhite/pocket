@@ -373,13 +373,31 @@ func (m *p2pModule) readStream(stream libp2pNetwork.Stream) {
 		m.logger.Debug().Err(err).Msg("setting stream read deadline")
 	}
 
+	// TODO: remove or cleanup
+	stat := stream.Scope().Stat()
+	m.logger.Debug().Fields(map[string]any{
+		"InboundConns":    stat.NumConnsInbound,
+		"OutboundConns":   stat.NumConnsOutbound,
+		"InboundStreams":  stat.NumStreamsInbound,
+		"OutboundStreams": stat.NumStreamsOutbound,
+	}).Msg("stream scope (read-side)")
+	// ---
+
 	data, err := io.ReadAll(stream)
 	if err != nil {
 		m.logger.Error().Err(err).Msg("reading from stream")
 		if err := stream.Reset(); err != nil {
-			m.logger.Debug().Err(err).Msg("resetting stream")
+			m.logger.Debug().Err(err).Msg("resetting stream (read-side)")
 		}
 		return
+	}
+
+	if err := stream.Close(); err != nil {
+		m.logger.Debug().Err(err).Msg("closing stream (read-side)")
+	}
+
+	if err := stream.Reset(); err != nil {
+		m.logger.Debug().Err(err).Msg("resetting stream (read-side)")
 	}
 
 	// TODO: remove
@@ -394,10 +412,6 @@ func (m *p2pModule) readStream(stream libp2pNetwork.Stream) {
 	}).Msg("INCOMING MSG")
 	if err := m.handleNetworkData(data); err != nil {
 		m.logger.Error().Err(err).Msg("handling network data")
-	}
-
-	if err := stream.CloseRead(); err != nil {
-		m.logger.Debug().Err(err).Msg("closing read stream")
 	}
 }
 

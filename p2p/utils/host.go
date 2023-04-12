@@ -3,6 +3,7 @@ package utils
 import (
 	"context"
 	"fmt"
+	libp2pNetwork "github.com/libp2p/go-libp2p/core/network"
 	"github.com/pokt-network/pocket/logger"
 	"time"
 
@@ -17,6 +18,11 @@ const (
 	week = time.Hour * 24 * 7
 	// TECHDEBT(#629): consider more carefully and parameterize.
 	defaultPeerTTL = 2 * week
+	// TECHDEBT(#629): configure timeouts. Consider security exposure vs. real-world conditions.
+	// TECHDEBT(#629): parameterize and expose via config.
+	// writeStreamTimeout is the duration to wait for a read operation on a
+	// stream to complete, after which the stream is closed ("timed out").
+	writeStreamTimeout = time.Second * 1
 )
 
 // PopulateLibp2pHost iterates through peers in given `pstore`, converting peer
@@ -86,6 +92,22 @@ func Libp2pSendToPeer(host libp2pHost.Host, data []byte, peer typesP2P.Peer) err
 		return err
 	}
 
+	// TODO: remove or cleanup
+	err = host.Network().ResourceManager().ViewTransient(func(scope libp2pNetwork.ResourceScope) error {
+		stat := scope.Stat()
+		logger.Global.Debug().Fields(map[string]any{
+			"InboundConns":    stat.NumConnsInbound,
+			"OutboundConns":   stat.NumConnsOutbound,
+			"InboundStreams":  stat.NumStreamsInbound,
+			"OutboundStreams": stat.NumStreamsOutbound,
+		}).Msg("host transient resource scope")
+		return nil
+	})
+	if err != nil {
+		logger.Global.Debug().Err(err).Msg("interrogating resource manager")
+	}
+	// ---
+
 	stream, err := host.NewStream(ctx, peerInfo.ID, protocol.PoktProtocolID)
 	if err != nil {
 		return fmt.Errorf("opening stream: %w", err)
@@ -98,7 +120,10 @@ func Libp2pSendToPeer(host libp2pHost.Host, data []byte, peer typesP2P.Peer) err
 		)
 	}
 
-	return stream.CloseWrite()
+	// MUST USE `streamClose` NOT `stream.CloswWrite`; otherwise, outbound streams
+	// will accumulate until resource limits are hit (e.g.):
+	// > "opening stream: stream-3478: transient: cannot reserve outbound stream: resource limit exceeded"
+	return stream.Close()
 }
 
 // TODO: remove me - used for debugging only
@@ -117,4 +142,10 @@ func PrintPStore(pstore typesP2P.Peerstore) {
 		count++
 	}
 
+}
+
+// newWriteStreamDeadline returns a future deadline
+// based on the read stream timeout duration.
+func newWriteStreamDeadline() time.Time {
+	return time.Now().Add(writeStreamTimeout)
 }
