@@ -3,7 +3,7 @@ package p2p
 import (
 	"errors"
 	"fmt"
-	"go.uber.org/multierr"
+	"strconv"
 	"sync/atomic"
 
 	"github.com/hashicorp/go-multierror"
@@ -11,6 +11,7 @@ import (
 	libp2pHost "github.com/libp2p/go-libp2p/core/host"
 	libp2pNetwork "github.com/libp2p/go-libp2p/core/network"
 	"github.com/multiformats/go-multiaddr"
+	"go.uber.org/multierr"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 
@@ -459,9 +460,9 @@ func (m *p2pModule) setupHost() (err error) {
 	}
 
 	// TECHDEBT(#609): use `StringArrayLogMarshaler` post test-utilities refactor.
-	addrStrs := make(map[int]string)
+	addrStrs := make(map[string]string)
 	for i, addr := range libp2pHost.InfoFromHost(m.host).Addrs {
-		addrStrs[i] = addr.String()
+		addrStrs[strconv.Itoa(i)] = addr.String()
 	}
 	m.logger.Info().Fields(addrStrs).Msg("Listening for incoming connections...")
 	return nil
