@@ -4219,11 +4219,12 @@ func TestNewManagerFromReaders(t *testing.T) {
 						HealthCheckPeriod: "30s",
 					},
 					P2P: &configs.P2PConfig{
-						PrivateKey:     "0ca1a40ddecdab4f5b04fa0bfed1d235beaa2b8082e7554425607516f0862075dfe357de55649e6d2ce889acf15eb77e94ab3c5756fe46d3c7538d37f27f115e",
-						Hostname:       "validator1",
-						Port:           defaults.DefaultP2PPort,
-						ConnectionType: configTypes.ConnectionType_TCPConnection,
-						MaxNonces:      1e5,
+						PrivateKey:              "0ca1a40ddecdab4f5b04fa0bfed1d235beaa2b8082e7554425607516f0862075dfe357de55649e6d2ce889acf15eb77e94ab3c5756fe46d3c7538d37f27f115e",
+						Hostname:                "validator1",
+						Port:                    defaults.DefaultP2PPort,
+						ConnectionType:          configTypes.ConnectionType_TCPConnection,
+						MaxNonces:               1e5,
+						MaxBootstrapConcurrency: 4,
 					},
 					Telemetry: &configs.TelemetryConfig{
 						Enabled:  true,
@@ -4273,11 +4274,12 @@ func TestNewManagerFromReaders(t *testing.T) {
 			want: &Manager{
 				config: &configs.Config{
 					P2P: &configs.P2PConfig{
-						PrivateKey:     "4ff3292ff14213149446f8208942b35439cb4b2c5e819f41fb612e880b5614bdd6cea8706f6ee6672c1e013e667ec8c46231e0e7abcf97ba35d89fceb8edae45",
-						Hostname:       "validator1",
-						Port:           42069,
-						ConnectionType: configTypes.ConnectionType_TCPConnection,
-						MaxNonces:      defaults.DefaultP2PMaxNonces,
+						PrivateKey:              "4ff3292ff14213149446f8208942b35439cb4b2c5e819f41fb612e880b5614bdd6cea8706f6ee6672c1e013e667ec8c46231e0e7abcf97ba35d89fceb8edae45",
+						Hostname:                "validator1",
+						Port:                    42069,
+						ConnectionType:          configTypes.ConnectionType_TCPConnection,
+						MaxNonces:               defaults.DefaultP2PMaxNonces,
+						MaxBootstrapConcurrency: 4,
 					},
 					Keybase: defaultCfg.Keybase,
 				},
