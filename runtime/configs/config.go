@@ -135,6 +135,7 @@ func NewDefaultConfig(options ...func(*Config)) *Config {
 			Port:           defaults.DefaultP2PPort,
 			ConnectionType: defaults.DefaultP2PConnectionType,
 			MaxNonces:      defaults.DefaultP2PMaxNonces,
+			MaxBootstrapConcurrency: defaults.DefaultP2PMaxBootstrapConcurrency,
 		},
 		Telemetry: &TelemetryConfig{
 			Enabled:  defaults.DefaultTelemetryEnabled,
