@@ -27,6 +27,7 @@ type BackgroundConfig struct {
 	Addr                  crypto.Address
 	CurrentHeightProvider providers.CurrentHeightProvider
 	PeerstoreProvider     providers.PeerstoreProvider
+	Handler               func(data []byte) error
 }
 
 // RainTreeConfig implements `RouterConfig` for use with `RainTreeRouter`.
@@ -35,6 +36,7 @@ type RainTreeConfig struct {
 	Addr                  crypto.Address
 	CurrentHeightProvider providers.CurrentHeightProvider
 	PeerstoreProvider     providers.PeerstoreProvider
+	Handler               func(data []byte) error
 
 	MaxNonces uint64
 }
