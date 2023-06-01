@@ -20,6 +20,7 @@ type baseConfig struct {
 	Addr                  crypto.Address
 	CurrentHeightProvider providers.CurrentHeightProvider
 	PeerstoreProvider     providers.PeerstoreProvider
+	Handler               func(data []byte) error
 }
 
 // BackgroundConfig implements `RouterConfig` for use with `BackgroundRouter`.
@@ -28,6 +29,7 @@ type BackgroundConfig struct {
 	Addr                  crypto.Address
 	CurrentHeightProvider providers.CurrentHeightProvider
 	PeerstoreProvider     providers.PeerstoreProvider
+	Handler               func(data []byte) error
 }
 
 // RainTreeConfig implements `RouterConfig` for use with `RainTreeRouter`.
@@ -36,8 +38,7 @@ type RainTreeConfig struct {
 	Addr                  crypto.Address
 	CurrentHeightProvider providers.CurrentHeightProvider
 	PeerstoreProvider     providers.PeerstoreProvider
-
-	MaxNonces uint64
+	Handler               func(data []byte) error
 }
 
 // IsValid implements the respective member of the `RouterConfig` interface.
@@ -57,6 +58,10 @@ func (cfg *baseConfig) IsValid() (err error) {
 	if cfg.PeerstoreProvider == nil {
 		err = multierr.Append(err, fmt.Errorf("peerstore provider not configured"))
 	}
+
+	if cfg.Handler == nil {
+		err = multierr.Append(err, fmt.Errorf("handler not configured"))
+	}
 	return err
 }
 
@@ -67,21 +72,19 @@ func (cfg *BackgroundConfig) IsValid() (err error) {
 		Addr:                  cfg.Addr,
 		CurrentHeightProvider: cfg.CurrentHeightProvider,
 		PeerstoreProvider:     cfg.PeerstoreProvider,
+		Handler:               cfg.Handler,
 	}
 	return multierr.Append(err, baseCfg.IsValid())
 }
 
 // IsValid implements the respective member of the `RouterConfig` interface.
 func (cfg *RainTreeConfig) IsValid() (err error) {
-	if cfg.MaxNonces == 0 {
-		err = multierr.Append(err, fmt.Errorf("max nonces must be greater than 0"))
-	}
-
 	baseCfg := baseConfig{
 		Host:                  cfg.Host,
 		Addr:                  cfg.Addr,
 		CurrentHeightProvider: cfg.CurrentHeightProvider,
 		PeerstoreProvider:     cfg.PeerstoreProvider,
+		Handler:               cfg.Handler,
 	}
 	return multierr.Append(err, baseCfg.IsValid())
 }
