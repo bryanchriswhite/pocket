@@ -101,6 +101,7 @@ func TestRainTree_Peerstore_HandleUpdate(t *testing.T) {
 				Addr:                  pubKey.Address(),
 				PeerstoreProvider:     pstoreProviderMock,
 				CurrentHeightProvider: currentHeightProviderMock,
+				Handler:               noopHandler,
 			}
 
 			router, err := NewRainTreeRouter(mockBus, rtCfg)
@@ -293,6 +294,7 @@ func testRainTreeMessageTargets(t *testing.T, expectedMsgProp *ExpectedRainTreeM
 		Addr:                  []byte{expectedMsgProp.orig},
 		PeerstoreProvider:     pstoreProviderMock,
 		CurrentHeightProvider: currentHeightProviderMock,
+		Handler:               noopHandler,
 	}
 
 	router, err := NewRainTreeRouter(busMock, rtCfg)
@@ -357,4 +359,8 @@ func mockAlphabetValidatorServiceURLsDNS(t *testing.T) (done func()) {
 	}
 
 	return testutil.PrepareDNSMock(zones)
+}
+
+func noopHandler(data []byte) error {
+	return nil
 }
