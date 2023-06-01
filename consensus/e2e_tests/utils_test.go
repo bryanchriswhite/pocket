@@ -11,10 +11,15 @@ import (
 
 	"github.com/benbjohnson/clock"
 	"github.com/golang/mock/gomock"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/pokt-network/pocket/consensus"
 	typesCons "github.com/pokt-network/pocket/consensus/types"
 	"github.com/pokt-network/pocket/internal/testutil"
+	"github.com/pokt-network/pocket/internal/testutil/p2p"
+	"github.com/pokt-network/pocket/internal/testutil/persistence"
+	telemetry_testutil "github.com/pokt-network/pocket/internal/testutil/telemetry"
 	persistenceMocks "github.com/pokt-network/pocket/persistence/types/mocks"
 	"github.com/pokt-network/pocket/runtime"
 	"github.com/pokt-network/pocket/runtime/configs"
@@ -30,8 +35,6 @@ import (
 	"github.com/pokt-network/pocket/shared/modules"
 	mockModules "github.com/pokt-network/pocket/shared/modules/mocks"
 	"github.com/pokt-network/pocket/state_machine"
-	"github.com/stretchr/testify/require"
-	"google.golang.org/protobuf/types/known/anypb"
 )
 
 func TestMain(m *testing.M) {
@@ -103,7 +106,7 @@ func CreateTestConsensusPocketNode(
 	bus modules.Bus,
 	eventsChannel modules.EventsChannel,
 ) *shared.Node {
-	persistenceMock := basePersistenceMock(t, eventsChannel, bus)
+	persistenceMock := persistence_testutil.PersistenceMockWithBlockStore(t, eventsChannel, bus)
 	bus.RegisterModule(persistenceMock)
 
 	consensusMod, err := consensus.Create(bus)
@@ -117,9 +120,9 @@ func CreateTestConsensusPocketNode(
 	runtimeMgr := (bus).GetRuntimeMgr()
 	// TODO(olshansky): At the moment we are using the same base mocks for all the tests,
 	// but note that they will need to be customized on a per test basis.
-	p2pMock := baseP2PMock(t, eventsChannel)
+	p2pMock := p2p_testutil.BaseP2PMock(t, eventsChannel)
 	utilityMock := baseUtilityMock(t, eventsChannel, runtimeMgr.GetGenesis(), consensusModule)
-	telemetryMock := baseTelemetryMock(t, eventsChannel)
+	telemetryMock := telemetry_testutil.MinimalTelemetryMock(t)
 	loggerMock := baseLoggerMock(t, eventsChannel)
 	rpcMock := baseRpcMock(t, eventsChannel)
 
@@ -562,21 +565,6 @@ func baseReplicaUtilityUnitOfWorkMock(t *testing.T, genesisState *genesis.Genesi
 	utilityReplicaUnitOfWorkMock.EXPECT().Release().Return(nil).AnyTimes()
 
 	return utilityReplicaUnitOfWorkMock
-}
-
-func baseTelemetryMock(t *testing.T, _ modules.EventsChannel) *mockModules.MockTelemetryModule {
-	ctrl := gomock.NewController(t)
-	telemetryMock := mockModules.NewMockTelemetryModule(ctrl)
-	timeSeriesAgentMock := baseTelemetryTimeSeriesAgentMock(t)
-	eventMetricsAgentMock := baseTelemetryEventMetricsAgentMock(t)
-
-	telemetryMock.EXPECT().Start().Return(nil).AnyTimes()
-	telemetryMock.EXPECT().SetBus(gomock.Any()).Return().AnyTimes()
-	telemetryMock.EXPECT().GetTimeSeriesAgent().Return(timeSeriesAgentMock).AnyTimes()
-	telemetryMock.EXPECT().GetEventMetricsAgent().Return(eventMetricsAgentMock).AnyTimes()
-	telemetryMock.EXPECT().GetModuleName().Return(modules.TelemetryModuleName).AnyTimes()
-
-	return telemetryMock
 }
 
 func baseRpcMock(t *testing.T, _ modules.EventsChannel) *mockModules.MockRPCModule {
