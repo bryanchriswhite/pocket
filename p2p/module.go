@@ -88,6 +88,12 @@ func (m *p2pModule) Create(bus modules.Bus, options ...modules.ModuleOption) (mo
 		logger: logger.Global.CreateLoggerForModule(modules.P2PModuleName),
 	}
 
+	if m.cfg.DisableRaintree {
+		m.logger.Warn().Msg("🚫🌧️🌲🚫 - raintree router is disabled!!! - 🚫🌧️🌲🚫")
+		m.logger.Warn().Msg("🚫🌧️🌲🚫 - raintree router is disabled!!! - 🚫🌧️🌲🚫")
+		m.logger.Warn().Msg("🚫🌧️🌲🚫 - raintree router is disabled!!! - 🚫🌧️🌲🚫")
+	}
+
 	// MUST call before referencing m.bus to ensure != nil.
 	bus.RegisterModule(m)
 
@@ -230,7 +236,11 @@ func (m *p2pModule) Broadcast(msg *anypb.Any) error {
 		return err
 	}
 
-	stakedBroadcastErr := m.stakedActorRouter.Broadcast(data)
+	var stakedBroadcastErr error
+	if !m.cfg.DisableRaintree {
+		stakedBroadcastErr = m.stakedActorRouter.Broadcast(data)
+	}
+
 	unstakedBroadcastErr := m.unstakedActorRouter.Broadcast(data)
 	return multierror.Append(err, stakedBroadcastErr, unstakedBroadcastErr).ErrorOrNil()
 	//return multierror.Append(err, unstakedBroadcastErr).ErrorOrNil()
@@ -250,6 +260,10 @@ func (m *p2pModule) Send(addr cryptoPocket.Address, msg *anypb.Any) error {
 	}
 
 	// TODO_THIS_COMMIT: send using "appropriate" router...
+	if m.cfg.DisableRaintree {
+		return m.unstakedActorRouter.Send(data, addr)
+	}
+
 	return m.stakedActorRouter.Send(data, addr)
 }
 
