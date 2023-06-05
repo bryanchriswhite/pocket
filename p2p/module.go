@@ -279,6 +279,10 @@ func (m *p2pModule) GetAddress() (cryptoPocket.Address, error) {
 	return m.address, nil
 }
 
+func (m *p2pModule) GetUnstakedPeerstore() (typesP2P.Peerstore, error) {
+	return m.unstakedActorRouter.GetPeerstore(), nil
+}
+
 // setupDependencies sets up the module's current height and peerstore providers.
 func (m *p2pModule) setupDependencies() error {
 	if err := m.setupCurrentHeightProvider(); err != nil {
