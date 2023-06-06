@@ -9,6 +9,7 @@ import (
 	"github.com/hashicorp/go-multierror"
 	"github.com/libp2p/go-libp2p"
 	libp2pHost "github.com/libp2p/go-libp2p/core/host"
+	libp2pNetwork "github.com/libp2p/go-libp2p/core/network"
 	"github.com/multiformats/go-multiaddr"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
@@ -274,6 +275,11 @@ func (m *p2pModule) GetAddress() (cryptoPocket.Address, error) {
 
 func (m *p2pModule) GetUnstakedPeerstore() (typesP2P.Peerstore, error) {
 	return m.unstakedActorRouter.GetPeerstore(), nil
+}
+
+// GetConnections implements the respective `modules.P2PModule` interface method.
+func (m *p2pModule) GetConnections() []libp2pNetwork.Conn {
+	return m.host.Network().Conns()
 }
 
 // setupDependencies sets up the module's current height and peerstore providers.
