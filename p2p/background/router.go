@@ -86,6 +86,7 @@ func (*backgroundRouter) Create(bus modules.Bus, cfg *config.BackgroundConfig) (
 		handler: cfg.Handler,
 		host:    cfg.Host,
 	}
+	rtr.SetBus(bus)
 
 	if err := rtr.setupDependencies(ctx, cfg); err != nil {
 		return nil, err
@@ -123,7 +124,12 @@ func (rtr *backgroundRouter) Send(data []byte, address cryptoPocket.Address) err
 		return fmt.Errorf("peer with address %s not in peerstore", address)
 	}
 
-	if err := utils.Libp2pSendToPeer(rtr.host, data, peer); err != nil {
+	if err := utils.Libp2pSendToPeer(
+		rtr.host,
+		protocol.BackgroundProtocolID,
+		data,
+		peer,
+	); err != nil {
 		return err
 	}
 	return nil
