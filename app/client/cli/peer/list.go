@@ -33,7 +33,7 @@ func listRunE(cmd *cobra.Command, _ []string) error {
 		log.Fatal("unable to get bus from context")
 	}
 
-	p2pPStoreProvider, err := persistence.NewP2PPeerstoreProvider(bus)
+	p2pPStoreProvider, err := persistence.Create(bus)
 	if err != nil {
 		log.Fatalf("creatating p2p peerstore provider: %v", err)
 	}
