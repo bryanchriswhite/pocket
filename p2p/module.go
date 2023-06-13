@@ -370,20 +370,48 @@ func (m *p2pModule) setupNonceDeduper() error {
 
 // setupRouters instantiates the configured router implementations.
 func (m *p2pModule) setupRouters() (err error) {
-	m.stakedActorRouter, err = raintree.NewRainTreeRouter(
-		m.GetBus(),
-		&config.RainTreeConfig{
-			Addr:                  m.address,
-			CurrentHeightProvider: m.currentHeightProvider,
-			PeerstoreProvider:     m.pstoreProvider,
-			Host:                  m.host,
-			Handler:               m.handlePocketEnvelope,
-		},
-	)
-	if err != nil {
-		return fmt.Errorf("staked actor router: %w", err)
+	if err := m.setupStakedRouter(); err != nil {
+		return err
 	}
 
+	if err := m.setupUnstakedRouter(); err != nil {
+		return err
+	}
+	return nil
+}
+
+// setupStakedRouter initializes the staked actor router ONLY IF this node is
+// a staked actor, exclusively for use between staked actors.
+func (m *p2pModule) setupStakedRouter() (err error) {
+	pstore, err := m.getPeerstore()
+	if err != nil {
+		return fmt.Errorf("getting staked peerstore: %w", err)
+	}
+
+	// Ensure self address is present in current height's staked actor set.
+	if self := pstore.GetPeer(m.address); self != nil {
+		m.logger.Debug().Msg("setting up staked actor router")
+		m.stakedActorRouter, err = raintree.NewRainTreeRouter(
+			m.GetBus(),
+			&config.RainTreeConfig{
+				Addr:                  m.address,
+				CurrentHeightProvider: m.currentHeightProvider,
+				PeerstoreProvider:     m.pstoreProvider,
+				Host:                  m.host,
+				Handler:               m.handlePocketEnvelope,
+			},
+		)
+		if err != nil {
+			return fmt.Errorf("setting up staked actor router: %w", err)
+		}
+	}
+	return nil
+}
+
+// setupUnstakedRouter initializes the unstaked actor router for use with the
+// entire P2P network.
+func (m *p2pModule) setupUnstakedRouter() (err error) {
+	m.logger.Debug().Msg("setting up unstaked actor router")
 	m.unstakedActorRouter, err = background.Create(
 		m.GetBus(),
 		&config.BackgroundConfig{
@@ -514,4 +542,10 @@ func (m *p2pModule) getMultiaddr() (multiaddr.Multiaddr, error) {
 	return utils.Libp2pMultiaddrFromServiceURL(fmt.Sprintf(
 		"%s:%d", m.cfg.Hostname, m.cfg.Port,
 	))
+}
+
+func (m *p2pModule) getPeerstore() (typesP2P.Peerstore, error) {
+	return m.pstoreProvider.GetStakedPeerstoreAtHeight(
+		m.currentHeightProvider.CurrentHeight(),
+	)
 }
