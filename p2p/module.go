@@ -262,7 +262,14 @@ func (m *p2pModule) Send(addr cryptoPocket.Address, msg *anypb.Any) error {
 
 	// TODO_THIS_COMMIT: send using "appropriate" router...
 	if m.cfg.DisableRaintree {
+		m.logger.Warn().Msg("RAINTREE DISABLED - sending on unstaked actor router!")
+		m.logger.Warn().Msg("RAINTREE DISABLED - sending on unstaked actor router!")
+		m.logger.Warn().Msg("RAINTREE DISABLED - sending on unstaked actor router!")
 		return m.unstakedActorRouter.Send(data, addr)
+	} else {
+		m.logger.Warn().Msg("RAINTREE ENABLED - sending on staked actor router!")
+		m.logger.Warn().Msg("RAINTREE ENABLED - sending on staked actor router!")
+		m.logger.Warn().Msg("RAINTREE ENABLED - sending on staked actor router!")
 	}
 
 	return m.stakedActorRouter.Send(data, addr)
@@ -377,7 +384,7 @@ func (m *p2pModule) setupRouters() (err error) {
 		return fmt.Errorf("staked actor router: %w", err)
 	}
 
-	m.unstakedActorRouter, err = background.NewBackgroundRouter(
+	m.unstakedActorRouter, err = background.Create(
 		m.GetBus(),
 		&config.BackgroundConfig{
 			Addr:                  m.address,

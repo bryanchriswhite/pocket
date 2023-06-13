@@ -177,10 +177,12 @@ func broadcastDebugMessage(cmd *cobra.Command, debugMsg *messaging.DebugMessage)
 	// address book of the actual validator nodes, so `validator1` never receives the message.
 	// p2pMod.Broadcast(anyProto)
 
+	logger.Global.Warn().Msg("fetching peerstore...")
 	pstore, err := fetchPeerstore(cmd)
 	if err != nil {
 		logger.Global.Fatal().Err(err).Msg("Unable to retrieve the pstore")
 	}
+	logger.Global.Warn().Msgf("peerstore size: %d", pstore.Size())
 	for _, val := range pstore.GetPeerList() {
 		addr := val.GetAddress()
 		if err != nil {

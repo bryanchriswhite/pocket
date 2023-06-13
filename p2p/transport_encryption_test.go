@@ -110,6 +110,6 @@ func TestP2pModule_Insecure_Error(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx := context.Background()
-	_, err = clearNode.NewStream(ctx, libp2pPeerInfo.ID, protocol.PoktProtocolID)
+	_, err = clearNode.NewStream(ctx, libp2pPeerInfo.ID, protocol.RaintreeProtocolID)
 	require.ErrorContains(t, err, "failed to negotiate security protocol: protocols not supported:")
 }

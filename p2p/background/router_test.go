@@ -45,7 +45,7 @@ func TestBackgroundRouter_InvalidConfig(t *testing.T) {
 	t.Skip("pending")
 	//busMock := bus_testutil.NewBus(t)
 	//
-	//router, err := NewBackgroundRouter()
+	//router, err := Create()
 }
 
 func TestBackgroundRouter_AddPeer(t *testing.T) {
@@ -349,7 +349,7 @@ func newRouterWithSelfPeerAndHost(t *testing.T, selfPeer typesP2P.Peer, host lib
 		return nil
 	}
 
-	router, err := NewBackgroundRouter(busMock, &config.BackgroundConfig{
+	router, err := Create(busMock, &config.BackgroundConfig{
 		Addr:                  selfPeer.GetAddress(),
 		PeerstoreProvider:     pstoreProviderMock,
 		CurrentHeightProvider: consensusMock,
