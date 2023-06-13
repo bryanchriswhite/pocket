@@ -5,10 +5,11 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/regen-network/gocuke"
 
+	"github.com/pokt-network/pocket/internal/testutil"
 	persistence_mocks "github.com/pokt-network/pocket/persistence/types/mocks"
 	"github.com/pokt-network/pocket/runtime/genesis"
 	"github.com/pokt-network/pocket/shared/codec"
-	"github.com/pokt-network/pocket/shared/core/types"
+	coreTypes "github.com/pokt-network/pocket/shared/core/types"
 	"github.com/pokt-network/pocket/shared/modules"
 	"github.com/pokt-network/pocket/shared/modules/mocks"
 	"github.com/pokt-network/pocket/shared/utils"
@@ -24,6 +25,15 @@ func BasePersistenceMock(t gocuke.TestingT, busMock *mock_modules.MockBus, genes
 	readCtxMock.EXPECT().GetAllValidators(gomock.Any()).Return(genesisState.GetValidators(), nil).AnyTimes()
 	persistenceModuleMock.EXPECT().NewReadContext(gomock.Any()).Return(readCtxMock, nil).AnyTimes()
 	readCtxMock.EXPECT().Release().AnyTimes()
+
+	readCtxMock.EXPECT().GetAllStakedActors(gomock.Any()).DoAndReturn(func(height int64) ([]*coreTypes.Actor, error) {
+		return testutil.Concatenate[*coreTypes.Actor](
+			genesisState.GetValidators(),
+			genesisState.GetServicers(),
+			genesisState.GetFishermen(),
+			genesisState.GetApplications(),
+		), nil
+	}).AnyTimes()
 
 	persistenceModuleMock.EXPECT().GetBus().Return(busMock).AnyTimes()
 	persistenceModuleMock.EXPECT().SetBus(busMock).AnyTimes()
@@ -54,8 +64,8 @@ func PersistenceMockWithBlockStore(t gocuke.TestingT, _ modules.EventsChannel, b
 		if bus.GetConsensusModule().CurrentHeight() < heightInt {
 			return nil, fmt.Errorf("requested height is higher than current height of the node's consensus module")
 		}
-		blockWithHeight := &types.Block{
-			BlockHeader: &types.BlockHeader{
+		blockWithHeight := &coreTypes.Block{
+			BlockHeader: &coreTypes.BlockHeader{
 				Height: utils.HeightFromBytes(height),
 			},
 		}
