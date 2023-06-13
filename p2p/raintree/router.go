@@ -85,7 +85,7 @@ func (*rainTreeRouter) Create(bus modules.Bus, cfg *config.RainTreeConfig) (type
 		return nil, err
 	}
 
-	rtr.host.SetStreamHandler(protocol.PoktProtocolID, rtr.handleStream)
+	rtr.host.SetStreamHandler(protocol.RaintreeProtocolID, rtr.handleStream)
 	return typesP2P.Router(rtr), nil
 }
 
@@ -169,7 +169,7 @@ func (rtr *rainTreeRouter) sendInternal(data []byte, address cryptoPocket.Addres
 	hostname := rtr.getHostname()
 	utils.LogOutgoingMsg(rtr.logger, hostname, peer)
 
-	if err := utils.Libp2pSendToPeer(rtr.host, data, peer); err != nil {
+	if err := utils.Libp2pSendToPeer(rtr.host, protocol.RaintreeProtocolID, data, peer); err != nil {
 		return err
 	}
 
@@ -193,7 +193,7 @@ func (rtr *rainTreeRouter) sendInternal(data []byte, address cryptoPocket.Addres
 
 // handleRainTreeMsg handles a RainTree message, continuing broadcast propagation
 // if applicable. Returns the serialized `PocketEnvelope` data contained within.
-func (rtr *rainTreeRouter) handleRainTreeMsg(data []byte) ([]byte, error) {
+func (rtr *rainTreeRouter) handleRainTreeMsg(rainTreeMsgBz []byte) ([]byte, error) {
 	blockHeightInt := rtr.GetBus().GetConsensusModule().CurrentHeight()
 	blockHeight := fmt.Sprintf("%d", blockHeightInt)
 
@@ -207,7 +207,7 @@ func (rtr *rainTreeRouter) handleRainTreeMsg(data []byte) ([]byte, error) {
 		)
 
 	var rainTreeMsg typesP2P.RainTreeMessage
-	if err := proto.Unmarshal(data, &rainTreeMsg); err != nil {
+	if err := proto.Unmarshal(rainTreeMsgBz, &rainTreeMsg); err != nil {
 		return nil, err
 	}
 
@@ -226,7 +226,7 @@ func (rtr *rainTreeRouter) handleRainTreeMsg(data []byte) ([]byte, error) {
 		}
 	}
 
-	// Return the data back to the caller so it can be handled by the app specific bus
+	// Return the rainTreeMsgBz back to the caller so it can be handled by the app specific bus
 	return rainTreeMsg.Data, nil
 }
 

@@ -5,6 +5,8 @@ package background
 import (
 	"context"
 	"fmt"
+	libp2pNetwork "github.com/libp2p/go-libp2p/core/network"
+	"io"
 
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
@@ -25,7 +27,10 @@ import (
 var (
 	_ typesP2P.Router            = &backgroundRouter{}
 	_ modules.IntegratableModule = &backgroundRouter{}
+	_ backgroundRouterFactory    = &backgroundRouter{}
 )
+
+type backgroundRouterFactory = modules.FactoryWithConfig[typesP2P.Router, *config.BackgroundConfig]
 
 // backgroundRouter implements `typesP2P.Router` for use with all P2P participants.
 type backgroundRouter struct {
@@ -39,6 +44,9 @@ type backgroundRouter struct {
 	// according to options.
 	// (see: https://pkg.go.dev/github.com/libp2p/go-libp2p#section-readme)
 	host libp2pHost.Host
+
+	// Fields below are assigned during creation via `#setupDependencies()`.
+
 	// gossipSub is used for broadcast communication
 	// (i.e. multiple, unidentified receivers)
 	// TECHDEBT: investigate diff between randomSub and gossipSub
@@ -56,9 +64,13 @@ type backgroundRouter struct {
 	pstore typesP2P.Peerstore
 }
 
-// NewBackgroundRouter returns a `backgroundRouter` as a `typesP2P.Router`
+// Create returns a `backgroundRouter` as a `typesP2P.Router`
 // interface using the given configuration.
-func NewBackgroundRouter(bus modules.Bus, cfg *config.BackgroundConfig) (typesP2P.Router, error) {
+func Create(bus modules.Bus, cfg *config.BackgroundConfig) (typesP2P.Router, error) {
+	return new(backgroundRouter).Create(bus, cfg)
+}
+
+func (*backgroundRouter) Create(bus modules.Bus, cfg *config.BackgroundConfig) (typesP2P.Router, error) {
 	// TECHDEBT(#595): add ctx to interface methods and propagate down.
 	ctx := context.TODO()
 
@@ -69,76 +81,17 @@ func NewBackgroundRouter(bus modules.Bus, cfg *config.BackgroundConfig) (typesP2
 		return nil, err
 	}
 
-	dhtMode := dht.ModeAutoServer
-	// NB: don't act as a bootstrap node in peer discovery in client debug mode
-	if isClientDebugMode(bus) {
-		dhtMode = dht.ModeClient
-	}
-
-	kadDHT, err := dht.New(ctx, cfg.Host, dht.Mode(dhtMode))
-	if err != nil {
-		return nil, fmt.Errorf("creating DHT: %w", err)
-	}
-
-	//if err := kadDHT.Bootstrap(ctx); err != nil {
-	//	return nil, fmt.Errorf("bootstrapping DHT: %w", err)
-	//}
-
-	// CONSIDERATION: If switching to `NewRandomSub`, there will be a max size
-	// TECHDEBT: integrate with go-libp2p-pubsub tracing
-	truncID := cfg.Host.ID().String()[:20]
-	jsonTracer, err := pubsub.NewJSONTracer(fmt.Sprintf("./pubsub-trace_%s.json", truncID))
-	if err != nil {
-		return nil, fmt.Errorf("creating json tracer: %w", err)
-	}
-	//pbTracer, err := pubsub.NewPBTracer("./pubsub-trace.pb")
-	//if err != nil {
-	//	return nil, fmt.Errorf("creating json tracer: %w", err)
-	//}
-
-	tracerOpt := pubsub.WithEventTracer(jsonTracer)
-	//tracerOpt := pubsub.WithEventTracer(pbTracer)
-	gossipSub, err := pubsub.NewGossipSub(ctx, cfg.Host, tracerOpt) //pubsub.WithFloodPublish(false),
-	//pubsub.WithMaxMessageSize(256),
-
-	if err != nil {
-		return nil, fmt.Errorf("creating gossip pubsub: %w", err)
-	}
-
-	topic, err := gossipSub.Join(protocol.BackgroundTopicStr)
-	if err != nil {
-		return nil, fmt.Errorf("joining background topic: %w", err)
-	}
-
-	// INVESTIGATE: `WithBufferSize` `SubOpt`:
-	// > WithBufferSize is a Subscribe option to customize the size of the subscribe
-	// > output buffer. The default length is 32 but it can be configured to avoid
-	// > dropping messages if the consumer is not reading fast enough.
-	// (see: https://pkg.go.dev/github.com/libp2p/go-libp2p-pubsub#WithBufferSize)
-	subscription, err := topic.Subscribe(
-	//pubsub.WithBufferSize(10),
-	//pubsub.With
-	)
-	if err != nil {
-		return nil, fmt.Errorf("subscribing to background topic: %w", err)
-	}
-
 	rtr := &backgroundRouter{
-		host:         cfg.Host,
-		gossipSub:    gossipSub,
-		kadDHT:       kadDHT,
-		topic:        topic,
-		subscription: subscription,
-		logger:       networkLogger,
-		handler:      cfg.Handler,
+		logger:  networkLogger,
+		handler: cfg.Handler,
+		host:    cfg.Host,
 	}
 
-	if err := rtr.setupPeerstore(
-		cfg.PeerstoreProvider,
-		cfg.CurrentHeightProvider,
-	); err != nil {
+	if err := rtr.setupDependencies(ctx, cfg); err != nil {
 		return nil, err
 	}
+
+	rtr.host.SetStreamHandler(protocol.RaintreeProtocolID, rtr.handleStream)
 
 	go rtr.readSubscription(ctx)
 
@@ -163,6 +116,8 @@ func (rtr *backgroundRouter) Broadcast(data []byte) error {
 
 // Send implements the respective `typesP2P.Router` interface  method.
 func (rtr *backgroundRouter) Send(data []byte, address cryptoPocket.Address) error {
+	rtr.logger.Warn().Str("address", address.String()).Msg("sending background message to peer")
+
 	peer := rtr.pstore.GetPeer(address)
 	if peer == nil {
 		return fmt.Errorf("peer with address %s not in peerstore", address)
@@ -214,6 +169,32 @@ func (rtr *backgroundRouter) Close() error {
 	return nil
 }
 
+func (rtr *backgroundRouter) setupDependencies(ctx context.Context, cfg *config.BackgroundConfig) error {
+	if err := rtr.setupPeerDiscovery(ctx); err != nil {
+		return fmt.Errorf("setting up peer discovery: %w", err)
+	}
+
+	if err := rtr.setupPubsub(ctx); err != nil {
+		return fmt.Errorf("setting up pubsub: %w", err)
+	}
+
+	if err := rtr.setupTopic(); err != nil {
+		return fmt.Errorf("setting up topic: %w", err)
+	}
+
+	if err := rtr.setupSubscription(); err != nil {
+		return fmt.Errorf("setting up subscription: %w", err)
+	}
+
+	if err := rtr.setupPeerstore(
+		cfg.PeerstoreProvider,
+		cfg.CurrentHeightProvider,
+	); err != nil {
+		return fmt.Errorf("setting up peerstore: %w", err)
+	}
+	return nil
+}
+
 func (rtr *backgroundRouter) setupPeerstore(
 	pstoreProvider providers.PeerstoreProvider,
 	currentHeightProvider providers.CurrentHeightProvider,
@@ -256,6 +237,120 @@ func (rtr *backgroundRouter) setupPeerstore(
 	return nil
 }
 
+func (rtr *backgroundRouter) setupPeerDiscovery(ctx context.Context) (err error) {
+	dhtMode := dht.ModeAutoServer
+	// NB: don't act as a bootstrap node in peer discovery in client debug mode
+	if isClientDebugMode(rtr.GetBus()) {
+		dhtMode = dht.ModeClient
+	}
+
+	// TECHDEBT(#595): add ctx to interface methods and propagate down.
+	rtr.kadDHT, err = dht.New(ctx, rtr.host, dht.Mode(dhtMode))
+	return err
+}
+
+func (rtr *backgroundRouter) setupPubsub(ctx context.Context) (err error) {
+	// TODO_THIS_COMMIT: remove or refactor
+	//
+	// TECHDEBT: integrate with go-libp2p-pubsub tracing
+	//truncID := host.ID().String()[:20]
+	//jsonTracer, err := pubsub.NewJSONTracer(fmt.Sprintf("./pubsub-trace_%s.json", truncID))
+	//if err != nil {
+	//	return fmt.Errorf("creating json tracer: %w", err)
+	//}
+	//
+	//tracerOpt := pubsub.WithEventTracer(jsonTracer)
+
+	// CONSIDERATION: If switching to `NewRandomSub`, there will be a max size
+	//rtr.gossipSub, err = pubsub.NewGossipSub(ctx, host, tracerOpt)
+	rtr.gossipSub, err = pubsub.NewGossipSub(ctx, rtr.host)
+	return err
+}
+
+func (rtr *backgroundRouter) setupTopic() (err error) {
+	rtr.topic, err = rtr.gossipSub.Join(protocol.BackgroundTopicStr)
+	return err
+}
+
+func (rtr *backgroundRouter) setupSubscription() (err error) {
+	// INVESTIGATE: `WithBufferSize` `SubOpt`:
+	// > WithBufferSize is a Subscribe option to customize the size of the subscribe
+	// > output buffer. The default length is 32 but it can be configured to avoid
+	// > dropping messages if the consumer is not reading fast enough.
+	// (see: https://pkg.go.dev/github.com/libp2p/go-libp2p-pubsub#WithBufferSize)
+	rtr.subscription, err = rtr.topic.Subscribe()
+	return err
+}
+
+// TODO_THIS_COMMIT: consider moving this to `baseRouter` to de-dup
+//
+// handleStream ensures the peerstore contains the remote peer and then reads
+// the incoming stream in a new go routine.
+func (rtr *backgroundRouter) handleStream(stream libp2pNetwork.Stream) {
+	rtr.logger.Debug().Msg("handling incoming stream")
+	peer, err := utils.PeerFromLibp2pStream(stream)
+	if err != nil {
+		rtr.logger.Error().Err(err).
+			Str("address", peer.GetAddress().String()).
+			Msg("parsing remote peer identity")
+
+		if err = stream.Reset(); err != nil {
+			rtr.logger.Error().Err(err).Msg("resetting stream")
+		}
+		return
+	}
+
+	if err := rtr.AddPeer(peer); err != nil {
+		rtr.logger.Error().Err(err).
+			Str("address", peer.GetAddress().String()).
+			Msg("adding remote peer to router")
+	}
+
+	go rtr.readStream(stream)
+}
+
+// readStream reads the incoming stream, extracts the serialized `PocketEnvelope`
+// data from the incoming `RainTreeMessage`, and passes it to the application by
+// calling the configured `rtr.handler`. Intended to be called in a go routine.
+func (rtr *backgroundRouter) readStream(stream libp2pNetwork.Stream) {
+	// TODO_THIS_COMMIT: cleanup --v
+
+	// Time out if no data is sent to free resources.
+	// NB: tests using libp2p's `mocknet` rely on this not returning an error.
+	//if err := stream.SetReadDeadline(newReadStreamDeadline()); err != nil {
+	//	// `SetReadDeadline` not supported by `mocknet` streams.
+	//	rtr.logger.Error().Err(err).Msg("setting stream read deadline")
+	//}
+
+	// log incoming stream
+	//rtr.logStream(stream)
+
+	// TODO_THIS_COMMIT: cleanup --^
+
+	// read stream
+	backgroundMsgBz, err := io.ReadAll(stream)
+	if err != nil {
+		rtr.logger.Error().Err(err).Msg("reading from stream")
+		if err := stream.Reset(); err != nil {
+			rtr.logger.Error().Err(err).Msg("resetting stream (read-side)")
+		}
+		return
+	}
+
+	// done reading; reset to signal this to remote peer
+	// NB: failing to reset the stream can easily max out the number of available
+	// network connections on the receiver's side.
+	if err := stream.Reset(); err != nil {
+		rtr.logger.Error().Err(err).Msg("resetting stream (read-side)")
+	}
+
+	// extract `PocketEnvelope` from `RainTreeMessage` (& continue propagation)
+	if err := rtr.handleBackgroundMsg(backgroundMsgBz); err != nil {
+		rtr.logger.Error().Err(err).Msg("handling raintree message")
+		return
+	}
+}
+
 func (rtr *backgroundRouter) readSubscription(ctx context.Context) {
 	// TODO_THIS_COMMIT: look into "topic validaton"
 	// (see: https://github.com/libp2p/specs/tree/master/pubsub#topic-validation)
@@ -284,6 +379,12 @@ func (rtr *backgroundRouter) handleBackgroundMsg(backgroundMsgBz []byte) error {
 	var backgroundMsg typesP2P.BackgroundMessage
 	if err := proto.Unmarshal(backgroundMsgBz, &backgroundMsg); err != nil {
 		return err
+	}
+
+	// There was no error, but we don't need to forward this to the app-specific bus.
+	// For example, the message has already been handled by the application.
+	if backgroundMsg.Data == nil {
+		return nil
 	}
 
 	return rtr.handler(backgroundMsg.Data)
