@@ -13,7 +13,7 @@ import (
 type RainTreeRouter = rainTreeRouter
 
 // TOOD_THIS_COMMIT: move & dedup
-type routerHandlerProxyFactory = generics_testutil.ProxyFactory[typesP2P.RouterHandler]
+type routerHandlerProxyFactory = generics_testutil.ProxyFactory[typesP2P.MessageHandler]
 
 // HandleStream exports `rainTreeRouter#handleStream` for testing purposes.
 func (rtr *rainTreeRouter) HandleStream(stream libp2pNetwork.Stream) {

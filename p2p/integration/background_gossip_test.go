@@ -296,8 +296,8 @@ func (s *backgroundGossipSuite) AFullyConnectedNetworkOfPeers(count int64) {
 		//})
 
 		handlerProxyFactory := func(
-			origHandler typesP2P.RouterHandler,
-		) (proxyHandler typesP2P.RouterHandler) {
+			origHandler typesP2P.MessageHandler,
+		) (proxyHandler typesP2P.MessageHandler) {
 			return func(data []byte) error {
 				//s.receivedWaitGroup.Done()
 				return origHandler(data)
@@ -306,7 +306,7 @@ func (s *backgroundGossipSuite) AFullyConnectedNetworkOfPeers(count int64) {
 
 		// TODO_THIS_COMMIT: look into go-libp2p-pubsub tracing
 		// (see: https://github.com/libp2p/go-libp2p-pubsub#tracing)
-		noopHandlerProxyFactory := func(_ typesP2P.RouterHandler) typesP2P.RouterHandler {
+		noopHandlerProxyFactory := func(_ typesP2P.MessageHandler) typesP2P.MessageHandler {
 			return func(_ []byte) error {
 				// noop
 				return nil

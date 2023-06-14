@@ -160,7 +160,7 @@ func TestBackgroundRouter_Broadcast(t *testing.T) {
 		testHosts = append(testHosts, host)
 		expectedPeerIDs[i] = host.ID().String()
 		rtr := newRouterWithSelfPeerAndHost(t, selfPeer, host)
-		rtr.HandlerProxy(t, func(origHandler typesP2P.RouterHandler) typesP2P.RouterHandler {
+		rtr.HandlerProxy(t, func(origHandler typesP2P.MessageHandler) typesP2P.MessageHandler {
 			return func(data []byte) error {
 				seenMessagesMutex.Lock()
 				broadcastWaitgroup.Done()
