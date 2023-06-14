@@ -1,12 +1,13 @@
 package raintree
 
 import (
+	"context"
 	"fmt"
-	"io"
-	"time"
+	"github.com/pokt-network/pocket/p2p/unicast"
+	"net/http"
+	"strings"
 
 	libp2pHost "github.com/libp2p/go-libp2p/core/host"
-	libp2pNetwork "github.com/libp2p/go-libp2p/core/network"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/pokt-network/pocket/logger"
@@ -22,14 +23,9 @@ import (
 	"github.com/pokt-network/pocket/shared/messaging"
 	"github.com/pokt-network/pocket/shared/modules"
 	"github.com/pokt-network/pocket/shared/modules/base_modules"
-	telemetry "github.com/pokt-network/pocket/telemetry"
+	sharedUtils "github.com/pokt-network/pocket/shared/utils"
+	"github.com/pokt-network/pocket/telemetry"
 )
-
-// TECHDEBT(#629): configure timeouts. Consider security exposure vs. real-world conditions.
-// TECHDEBT(#629): parameterize and expose via config.
-// readStreamTimeout is the duration to wait for a read operation on a
-// stream to complete, after which the stream is closed ("timed out").
-const readStreamTimeout = time.Second * 10
 
 var (
 	_ typesP2P.Router            = &rainTreeRouter{}
@@ -41,6 +37,7 @@ type rainTreeFactory = modules.FactoryWithConfig[typesP2P.Router, *config.RainTr
 
 type rainTreeRouter struct {
 	base_modules.IntegratableModule
+	unicast.UnicastRouter
 
 	logger *modules.Logger
 	// handler is the function to call when a message is received.
@@ -85,7 +82,6 @@ func (*rainTreeRouter) Create(bus modules.Bus, cfg *config.RainTreeConfig) (type
 		return nil, err
 	}
 
-	rtr.host.SetStreamHandler(protocol.RaintreeProtocolID, rtr.handleStream)
 	return typesP2P.Router(rtr), nil
 }
 
@@ -191,9 +187,11 @@ func (rtr *rainTreeRouter) sendInternal(data []byte, address cryptoPocket.Addres
 	return nil
 }
 
-// handleRainTreeMsg handles a RainTree message, continuing broadcast propagation
-// if applicable. Returns the serialized `PocketEnvelope` data contained within.
-func (rtr *rainTreeRouter) handleRainTreeMsg(rainTreeMsgBz []byte) ([]byte, error) {
+// handleRainTreeMsg deserializes a RainTree message to extract the `PocketEnvelope`
+// bytes contained within, continues broadcast propagation, if applicable, and
+// passes them off to the application by calling the configured `rtr.handler`.
+// Intended to be called in a go routine.
+func (rtr *rainTreeRouter) handleRainTreeMsg(rainTreeMsgBz []byte) error {
 	blockHeightInt := rtr.GetBus().GetConsensusModule().CurrentHeight()
 	blockHeight := fmt.Sprintf("%d", blockHeightInt)
 
@@ -208,26 +206,35 @@ func (rtr *rainTreeRouter) handleRainTreeMsg(rainTreeMsgBz []byte) ([]byte, erro
 
 	var rainTreeMsg typesP2P.RainTreeMessage
 	if err := proto.Unmarshal(rainTreeMsgBz, &rainTreeMsg); err != nil {
-		return nil, err
+		return err
 	}
 
 	// TECHDEBT(#763): refactor as "pre-propagation validation"
 	networkMessage := messaging.PocketEnvelope{}
 	if err := proto.Unmarshal(rainTreeMsg.Data, &networkMessage); err != nil {
 		rtr.logger.Error().Err(err).Msg("Error decoding network message")
-		return nil, err
+		return err
 	}
 	// --
 
 	// Continue RainTree propagation
 	if rainTreeMsg.Level > 0 {
 		if err := rtr.broadcastAtLevel(rainTreeMsg.Data, rainTreeMsg.Level-1); err != nil {
-			return nil, err
+			return err
 		}
 	}
 
-	// Return the rainTreeMsgBz back to the caller so it can be handled by the app specific bus
-	return rainTreeMsg.Data, nil
+	// There was no error, but we don't need to forward this to the app-specific bus.
+	// For example, the message has already been handled by the application.
+	if rainTreeMsg.Data == nil {
+		return nil
+	}
+
+	// call configured handler to forward to app-specific bus
+	if err := rtr.handler(rainTreeMsg.Data); err != nil {
+		rtr.logger.Error().Err(err).Msg("handling pocket envelope")
+	}
+	return nil
 }
 
 // GetPeerstore implements the respective member of `typesP2P.Router`.
@@ -276,79 +283,9 @@ func (rtr *rainTreeRouter) Close() error {
 	return nil
 }
 
-// handleStream ensures the peerstore contains the remote peer and then reads
-// the incoming stream in a new go routine.
-func (rtr *rainTreeRouter) handleStream(stream libp2pNetwork.Stream) {
-	rtr.logger.Debug().Msg("handling incoming stream")
-	peer, err := utils.PeerFromLibp2pStream(stream)
-	if err != nil {
-		rtr.logger.Error().Err(err).
-			Str("address", peer.GetAddress().String()).
-			Msg("parsing remote peer identity")
 
-		if err = stream.Reset(); err != nil {
-			rtr.logger.Error().Err(err).Msg("resetting stream")
-		}
-		return
 	}
 
-	if err := rtr.AddPeer(peer); err != nil {
-		rtr.logger.Error().Err(err).
-			Str("address", peer.GetAddress().String()).
-			Msg("adding remote peer to router")
-	}
-
-	go rtr.readStream(stream)
-}
-
-// readStream reads the incoming stream, extracts the serialized `PocketEnvelope`
-// data from the incoming `RainTreeMessage`, and passes it to the application by
-// calling the configured `rtr.handler`. Intended to be called in a go routine.
-func (rtr *rainTreeRouter) readStream(stream libp2pNetwork.Stream) {
-	// Time out if no data is sent to free resources.
-	// NB: tests using libp2p's `mocknet` rely on this not returning an error.
-	if err := stream.SetReadDeadline(newReadStreamDeadline()); err != nil {
-		// `SetReadDeadline` not supported by `mocknet` streams.
-		rtr.logger.Error().Err(err).Msg("setting stream read deadline")
-	}
-
-	// log incoming stream
-	rtr.logStream(stream)
-
-	// read stream
-	rainTreeMsgBz, err := io.ReadAll(stream)
-	if err != nil {
-		rtr.logger.Error().Err(err).Msg("reading from stream")
-		if err := stream.Reset(); err != nil {
-			rtr.logger.Error().Err(err).Msg("resetting stream (read-side)")
-		}
-		return
-	}
-
-	// done reading; reset to signal this to remote peer
-	// NB: failing to reset the stream can easily max out the number of available
-	// network connections on the receiver's side.
-	if err := stream.Reset(); err != nil {
-		rtr.logger.Error().Err(err).Msg("resetting stream (read-side)")
-	}
-
-	// extract `PocketEnvelope` from `RainTreeMessage` (& continue propagation)
-	poktEnvelopeBz, err := rtr.handleRainTreeMsg(rainTreeMsgBz)
-	if err != nil {
-		rtr.logger.Error().Err(err).Msg("handling raintree message")
-		return
-	}
-
-	// There was no error, but we don't need to forward this to the app-specific bus.
-	// For example, the message has already been handled by the application.
-	if poktEnvelopeBz == nil {
-		return
-	}
-
-	// call configured handler to forward to app-specific bus
-	if err := rtr.handler(poktEnvelopeBz); err != nil {
-		rtr.logger.Error().Err(err).Msg("handling pocket envelope")
-	}
 }
 
 // shouldSendToTarget returns false if target is self.
@@ -356,29 +293,37 @@ func shouldSendToTarget(target target) bool {
 	return !target.isSelf
 }
 
+func (rtr *rainTreeRouter) setupUnicastRouter() error {
+	unicastRouterCfg := config.UnicastRouterConfig{
+		Logger:         rtr.logger,
+		Host:           rtr.host,
+		ProtocolID:     protocol.RaintreeProtocolID,
+		MessageHandler: rtr.handleRainTreeMsg,
+		PeerHandler:    rtr.AddPeer,
+	}
+
+	unicastRouter, err := unicast.Create(rtr.GetBus(), &unicastRouterCfg)
+	if err != nil {
+		return fmt.Errorf("setting up unicast router: %w", err)
+	}
+
+	rtr.UnicastRouter = *unicastRouter
+	return nil
+}
+
 func (rtr *rainTreeRouter) setupDependencies() error {
+	if err := rtr.setupUnicastRouter(); err != nil {
+		return err
+	}
+
 	pstore, err := rtr.pstoreProvider.GetStakedPeerstoreAtHeight(rtr.currentHeightProvider.CurrentHeight())
 	if err != nil {
-		return err
+		return fmt.Errorf("getting staked peerstore: %w", err)
 	}
 
 	if err := rtr.setupPeerManager(pstore); err != nil {
-		return err
+		return fmt.Errorf("setting up peer manager: %w", err)
 	}
-
-	// TODO: remove me
-	//debugFieldsMap := map[string]any{"selfPeerID": rtr.host.ID()}
-	//for _, peer := range pstore.GetPeerList() {
-	//	peerInfo, err := utils.Libp2pAddrInfoFromPeer(peer)
-	//	if err != nil {
-	//		panic(err)
-	//	}
-	//
-	//	debugFieldsMap[peerInfo.ID.String()] = peer.GetAddress().String()
-	//}
-	//
-	//rtr.logger.Debug().Fields(debugFieldsMap).Msg("peer IDs to pocket addresses")
-	// END TODO
 
 	if err := utils.PopulateLibp2pHost(rtr.host, pstore); err != nil {
 		return err
@@ -395,8 +340,4 @@ func (rtr *rainTreeRouter) getHostname() string {
 	return rtr.GetBus().GetRuntimeMgr().GetConfig().P2P.Hostname
 }
 
-// newReadStreamDeadline returns a future deadline
-// based on the read stream timeout duration.
-func newReadStreamDeadline() time.Time {
-	return time.Now().Add(readStreamTimeout)
 }
