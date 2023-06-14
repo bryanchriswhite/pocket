@@ -237,7 +237,7 @@ func (rtr *rainTreeRouter) handleRainTreeMsg(rainTreeMsgBz []byte) error {
 
 	// call configured handler to forward to app-specific bus
 	if err := rtr.handler(rainTreeMsg.Data); err != nil {
-		rtr.logger.Error().Err(err).Msg("handling pocket envelope")
+		rtr.logger.Error().Err(err).Msg("handling raintree message")
 	}
 	return nil
 }
