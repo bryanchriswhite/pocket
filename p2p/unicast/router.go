@@ -121,6 +121,7 @@ func (rtr *UnicastRouter) readStream(stream libp2pNetwork.Stream) {
 	}
 
 	if err := rtr.messageHandler(messageBz); err != nil {
+		rtr.logger.Error().Err(err).Msg("handling message")
 		return
 	}
 }
