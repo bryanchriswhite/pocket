@@ -44,7 +44,7 @@ type rainTreeRouter struct {
 
 	logger *modules.Logger
 	// handler is the function to call when a message is received.
-	handler typesP2P.RouterHandler
+	handler typesP2P.MessageHandler
 	// host represents a libp2p libp2pNetwork node, it encapsulates a libp2p peerstore
 	// & connection manager. `libp2p.New` configures and starts listening
 	// according to options.
