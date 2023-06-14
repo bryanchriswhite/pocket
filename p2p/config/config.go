@@ -3,10 +3,21 @@ package config
 import (
 	"fmt"
 
-	"github.com/libp2p/go-libp2p/core/host"
-	"github.com/pokt-network/pocket/p2p/providers"
-	"github.com/pokt-network/pocket/shared/crypto"
 	"go.uber.org/multierr"
+
+	"github.com/libp2p/go-libp2p/core/host"
+	"github.com/libp2p/go-libp2p/core/protocol"
+	"github.com/pokt-network/pocket/p2p/providers"
+	typesP2P "github.com/pokt-network/pocket/p2p/types"
+	"github.com/pokt-network/pocket/shared/crypto"
+	"github.com/pokt-network/pocket/shared/modules"
+)
+
+var (
+	_ typesP2P.RouterConfig = &baseConfig{}
+	_ typesP2P.RouterConfig = &UnicastRouterConfig{}
+	_ typesP2P.RouterConfig = &BackgroundConfig{}
+	_ typesP2P.RouterConfig = &RainTreeConfig{}
 )
 
 // baseConfig implements `RouterConfig` using the given libp2p host and current
@@ -21,6 +32,14 @@ type baseConfig struct {
 	CurrentHeightProvider providers.CurrentHeightProvider
 	PeerstoreProvider     providers.PeerstoreProvider
 	Handler               func(data []byte) error
+}
+
+type UnicastRouterConfig struct {
+	Logger         *modules.Logger
+	Host           host.Host
+	ProtocolID     protocol.ID
+	MessageHandler typesP2P.MessageHandler
+	PeerHandler    func(peer typesP2P.Peer) error
 }
 
 // BackgroundConfig implements `RouterConfig` for use with `BackgroundRouter`.
@@ -66,19 +85,31 @@ func (cfg *baseConfig) IsValid() (err error) {
 }
 
 // IsValid implements the respective member of the `RouterConfig` interface.
-func (cfg *BackgroundConfig) IsValid() (err error) {
-	baseCfg := baseConfig{
-		Host:                  cfg.Host,
-		Addr:                  cfg.Addr,
-		CurrentHeightProvider: cfg.CurrentHeightProvider,
-		PeerstoreProvider:     cfg.PeerstoreProvider,
-		Handler:               cfg.Handler,
+func (cfg *UnicastRouterConfig) IsValid() (err error) {
+	if cfg.Logger == nil {
+		err = multierr.Append(err, fmt.Errorf("logger not configured"))
 	}
-	return multierr.Append(err, baseCfg.IsValid())
+
+	if cfg.Host == nil {
+		err = multierr.Append(err, fmt.Errorf("host not configured"))
+	}
+
+	if cfg.ProtocolID == "" {
+		err = multierr.Append(err, fmt.Errorf("protocol id not configured"))
+	}
+
+	if cfg.MessageHandler == nil {
+		err = multierr.Append(err, fmt.Errorf("message handler not configured"))
+	}
+
+	if cfg.PeerHandler == nil {
+		err = multierr.Append(err, fmt.Errorf("peer handler not configured"))
+	}
+	return err
 }
 
 // IsValid implements the respective member of the `RouterConfig` interface.
-func (cfg *RainTreeConfig) IsValid() (err error) {
+func (cfg *BackgroundConfig) IsValid() error {
 	baseCfg := baseConfig{
 		Host:                  cfg.Host,
 		Addr:                  cfg.Addr,
@@ -86,5 +117,17 @@ func (cfg *RainTreeConfig) IsValid() (err error) {
 		PeerstoreProvider:     cfg.PeerstoreProvider,
 		Handler:               cfg.Handler,
 	}
-	return multierr.Append(err, baseCfg.IsValid())
+	return baseCfg.IsValid()
+}
+
+// IsValid implements the respective member of the `RouterConfig` interface.
+func (cfg *RainTreeConfig) IsValid() error {
+	baseCfg := baseConfig{
+		Host:                  cfg.Host,
+		Addr:                  cfg.Addr,
+		CurrentHeightProvider: cfg.CurrentHeightProvider,
+		PeerstoreProvider:     cfg.PeerstoreProvider,
+		Handler:               cfg.Handler,
+	}
+	return baseCfg.IsValid()
 }
