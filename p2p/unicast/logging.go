@@ -1,4 +1,4 @@
-package raintree
+package types
 
 import (
 	libp2pNetwork "github.com/libp2p/go-libp2p/core/network"
@@ -8,7 +8,7 @@ import (
 )
 
 // logStream logs the incoming stream and its scope stats
-func (rtr *rainTreeRouter) logStream(stream libp2pNetwork.Stream) {
+func (rtr *unicast.UnicastRouter) logStream(stream libp2pNetwork.Stream) {
 	rtr.logStreamScopeStats(stream)
 
 	remotePeer, err := utils.PeerFromLibp2pStream(stream)
@@ -21,11 +21,14 @@ func (rtr *rainTreeRouter) logStream(stream libp2pNetwork.Stream) {
 
 // logStreamScopeStats logs the incoming stream's scope stats
 // (see: https://pkg.go.dev/github.com/libp2p/go-libp2p@v0.27.0/core/network#StreamScope)
-func (rtr *rainTreeRouter) logStreamScopeStats(stream libp2pNetwork.Stream) {
+func (rtr *unicast.UnicastRouter) logStreamScopeStats(stream libp2pNetwork.Stream) {
 	if err := utils.LogScopeStatFactory(
 		&logger.Global.Logger,
 		"stream scope (read-side)",
 	)(stream.Scope()); err != nil {
 		rtr.logger.Debug().Err(err).Msg("logging stream scope stats")
 	}
+}
+func (rtr *unicast.UnicastRouter) getHostname() string {
+	return rtr.GetBus().GetRuntimeMgr().GetConfig().P2P.Hostname
 }
