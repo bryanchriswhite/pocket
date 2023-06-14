@@ -400,6 +400,7 @@ func (m *p2pModule) setupStakedRouter() (err error) {
 				PeerstoreProvider:     m.pstoreProvider,
 				Host:                  m.host,
 				Handler:               m.handlePocketEnvelope,
+				BootstrapNodes:        m.bootstrapNodes,
 			},
 		)
 		if err != nil {

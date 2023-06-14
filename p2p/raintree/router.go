@@ -14,9 +14,12 @@ import (
 	"github.com/pokt-network/pocket/p2p/config"
 	"github.com/pokt-network/pocket/p2p/protocol"
 	"github.com/pokt-network/pocket/p2p/providers"
+	rpcCHP "github.com/pokt-network/pocket/p2p/providers/current_height_provider/rpc"
 	"github.com/pokt-network/pocket/p2p/providers/peerstore_provider"
+	rpcPSP "github.com/pokt-network/pocket/p2p/providers/peerstore_provider/rpc"
 	typesP2P "github.com/pokt-network/pocket/p2p/types"
 	"github.com/pokt-network/pocket/p2p/utils"
+	"github.com/pokt-network/pocket/rpc"
 	"github.com/pokt-network/pocket/shared/codec"
 	cryptoPocket "github.com/pokt-network/pocket/shared/crypto"
 	"github.com/pokt-network/pocket/shared/mempool"
@@ -53,6 +56,7 @@ type rainTreeRouter struct {
 	pstoreProvider        peerstore_provider.PeerstoreProvider
 	currentHeightProvider providers.CurrentHeightProvider
 	nonceDeduper          *mempool.GenericFIFOSet[uint64, uint64]
+	bootstrapNodes        []string
 }
 
 func NewRainTreeRouter(bus modules.Bus, cfg *config.RainTreeConfig) (typesP2P.Router, error) {
@@ -75,6 +79,7 @@ func (*rainTreeRouter) Create(bus modules.Bus, cfg *config.RainTreeConfig) (type
 		currentHeightProvider: cfg.CurrentHeightProvider,
 		logger:                routerLogger,
 		handler:               cfg.Handler,
+		bootstrapNodes:        cfg.BootstrapNodes,
 	}
 	rtr.SetBus(bus)
 
@@ -283,9 +288,19 @@ func (rtr *rainTreeRouter) Close() error {
 	return nil
 }
 
+func (rtr *rainTreeRouter) Bootstrap(ctx context.Context, maxConcurrency uint32) error {
+	limiter := sharedUtils.NewLimiter(int(maxConcurrency))
 
+	for _, serviceURL := range rtr.bootstrapNodes {
+		// concurrent bootstrapping
+		// TECHDEBT(#595): add ctx to interface methods and propagate down.
+		limiter.Go(ctx, func() {
+			rtr.bootstrapFromRPC(strings.Clone(serviceURL))
+		})
 	}
 
+	limiter.Close()
+	return nil
 }
 
 // shouldSendToTarget returns false if target is self.
@@ -340,4 +355,45 @@ func (rtr *rainTreeRouter) getHostname() string {
 	return rtr.GetBus().GetRuntimeMgr().GetConfig().P2P.Hostname
 }
 
+// bootstrapFromRPC fetches the peerstore of the peer at `serviceURL` via RPC
+// and adds it to this host's peerstore after performing a health check.
+// TECHDEBT(SOLID): refactor; this method has more than one reason to change
+func (rtr *rainTreeRouter) bootstrapFromRPC(serviceURL string) {
+	rtr.logger.Info().Str("endpoint", serviceURL).Msg("Attempting to bootstrap from bootstrap node")
+
+	client, err := rpc.NewClientWithResponses(serviceURL)
+	if err != nil {
+		return
+	}
+	healthCheck, err := client.GetV1Health(context.TODO())
+	if err != nil || healthCheck == nil || healthCheck.StatusCode != http.StatusOK {
+		rtr.logger.Warn().Str("serviceURL", serviceURL).Msg("Error getting a green health check from bootstrap node")
+		return
+	}
+
+	// fetch `serviceURL`'s  peerstore
+	pstoreProvider := rpcPSP.Create(
+		rpcPSP.WithP2PConfig(
+			rtr.GetBus().GetRuntimeMgr().GetConfig().P2P,
+		),
+		rpcPSP.WithCustomRPCURL(serviceURL),
+	)
+
+	currentHeightProvider := rpcCHP.NewRPCCurrentHeightProvider(rpcCHP.WithCustomRPCURL(serviceURL))
+
+	pstore, err := pstoreProvider.GetStakedPeerstoreAtHeight(currentHeightProvider.CurrentHeight())
+	if err != nil {
+		rtr.logger.Warn().Err(err).Str("endpoint", serviceURL).Msg("Error getting address book from bootstrap node")
+		return
+	}
+
+	// add `serviceURL`'s peers to this node's peerstore
+	for _, peer := range pstore.GetPeerList() {
+		rtr.logger.Debug().Str("address", peer.GetAddress().String()).Msg("Adding peer to router")
+		if err := rtr.AddPeer(peer); err != nil {
+			rtr.logger.Error().Err(err).
+				Str("pokt_address", peer.GetAddress().String()).
+				Msg("adding peer")
+		}
+	}
 }

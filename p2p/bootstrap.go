@@ -4,16 +4,11 @@ import (
 	"context"
 	"encoding/csv"
 	"fmt"
-	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
 
-	rpcCHP "github.com/pokt-network/pocket/p2p/providers/current_height_provider/rpc"
-	rpcPSP "github.com/pokt-network/pocket/p2p/providers/peerstore_provider/rpc"
-	"github.com/pokt-network/pocket/rpc"
 	"github.com/pokt-network/pocket/runtime/defaults"
-	"github.com/pokt-network/pocket/shared/utils"
 )
 
 // configureBootstrapNodes parses the bootstrap nodes from the config and validates them
@@ -43,62 +38,18 @@ func (m *p2pModule) configureBootstrapNodes() error {
 
 // bootstrap attempts to bootstrap from a bootstrap node
 func (m *p2pModule) bootstrap() error {
-	limiter := utils.NewLimiter(int(m.cfg.MaxBootstrapConcurrency))
-
-	for _, serviceURL := range m.bootstrapNodes {
-		// concurrent bootstrapping
+	if isStaked, err := m.isStakedActor(); err != nil {
+		return err
+	} else if isStaked {
 		// TECHDEBT(#595): add ctx to interface methods and propagate down.
-		limiter.Go(context.TODO(), func() {
-			m.bootstrapFromRPC(strings.Clone(serviceURL))
-		})
-	}
-
-	limiter.Close()
-
-	return nil
-}
-
-// bootstrapFromRPC fetches the peerstore of the peer at `serviceURL` via RPC
-// and adds it to this host's peerstore after performing a health check.
-// TECHDEBT(SOLID): refactor; this method has more than one reason to change
-func (m *p2pModule) bootstrapFromRPC(serviceURL string) {
-	m.logger.Info().Str("endpoint", serviceURL).Msg("Attempting to bootstrap from bootstrap node")
-
-	client, err := rpc.NewClientWithResponses(serviceURL)
-	if err != nil {
-		return
-	}
-	healthCheck, err := client.GetV1Health(context.TODO())
-	if err != nil || healthCheck == nil || healthCheck.StatusCode != http.StatusOK {
-		m.logger.Warn().Str("serviceURL", serviceURL).Msg("Error getting a green health check from bootstrap node")
-		return
-	}
-
-	// fetch `serviceURL`'s  peerstore
-	pstoreProvider := rpcPSP.Create(
-		rpcPSP.WithP2PConfig(
-			m.GetBus().GetRuntimeMgr().GetConfig().P2P,
-		),
-		rpcPSP.WithCustomRPCURL(serviceURL),
-	)
-
-	currentHeightProvider := rpcCHP.NewRPCCurrentHeightProvider(rpcCHP.WithCustomRPCURL(serviceURL))
-
-	pstore, err := pstoreProvider.GetStakedPeerstoreAtHeight(currentHeightProvider.CurrentHeight())
-	if err != nil {
-		m.logger.Warn().Err(err).Str("endpoint", serviceURL).Msg("Error getting address book from bootstrap node")
-		return
-	}
-
-	// add `serviceURL`'s peers to this node's peerstore
-	for _, peer := range pstore.GetPeerList() {
-		m.logger.Debug().Str("address", peer.GetAddress().String()).Msg("Adding peer to router")
-		if err := m.stakedActorRouter.AddPeer(peer); err != nil {
-			m.logger.Error().Err(err).
-				Str("pokt_address", peer.GetAddress().String()).
-				Msg("adding peer")
+		if err := m.stakedActorRouter.Bootstrap(
+			context.TODO(),
+			m.cfg.MaxBootstrapConcurrency,
+		); err != nil {
+			return err
 		}
 	}
+	return nil
 }
 
 func isValidHostnamePort(str string) bool {
