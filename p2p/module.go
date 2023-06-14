@@ -371,8 +371,12 @@ func (m *p2pModule) setupNonceDeduper() error {
 
 // setupRouters instantiates the configured router implementations.
 func (m *p2pModule) setupRouters() (err error) {
-	if err := m.setupStakedRouter(); err != nil {
+	if isStaked, err := m.isStakedActor(); err != nil {
 		return err
+	} else if isStaked {
+		if err := m.setupStakedRouter(); err != nil {
+			return err
+		}
 	}
 
 	if err := m.setupUnstakedRouter(); err != nil {
@@ -384,13 +388,9 @@ func (m *p2pModule) setupRouters() (err error) {
 // setupStakedRouter initializes the staked actor router ONLY IF this node is
 // a staked actor, exclusively for use between staked actors.
 func (m *p2pModule) setupStakedRouter() (err error) {
-	pstore, err := m.getPeerstore()
-	if err != nil {
-		return fmt.Errorf("getting staked peerstore: %w", err)
-	}
-
-	// Ensure self address is present in current height's staked actor set.
-	if self := pstore.GetPeer(m.address); self != nil {
+	if isStaked, err := m.isStakedActor(); err != nil {
+		return err
+	} else if isStaked {
 		m.logger.Debug().Msg("setting up staked actor router")
 		m.stakedActorRouter, err = raintree.NewRainTreeRouter(
 			m.GetBus(),
@@ -549,4 +549,19 @@ func (m *p2pModule) getPeerstore() (typesP2P.Peerstore, error) {
 	return m.pstoreProvider.GetStakedPeerstoreAtHeight(
 		m.currentHeightProvider.CurrentHeight(),
 	)
+}
+
+// isStakedActor returns whether the current node is a staked actor at the current height.
+// Return an error if a peerstore can't be provided.
+func (m *p2pModule) isStakedActor() (bool, error) {
+	pstore, err := m.getPeerstore()
+	if err != nil {
+		return false, fmt.Errorf("getting staked peerstore: %w", err)
+	}
+
+	// Ensure self address is present in current height's staked actor set.
+	if self := pstore.GetPeer(m.address); self == nil {
+		return true, nil
+	}
+	return false, nil
 }

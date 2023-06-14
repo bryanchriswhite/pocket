@@ -24,21 +24,25 @@ func (m *p2pModule) HandleEvent(event *anypb.Any) error {
 			return fmt.Errorf("failed to cast event to ConsensusNewHeightEvent")
 		}
 
-		oldPeerList := m.stakedActorRouter.GetPeerstore().GetPeerList()
-		updatedPeerstore, err := m.pstoreProvider.GetStakedPeerstoreAtHeight(consensusNewHeightEvent.Height)
-		if err != nil {
+		if isStaked, err := m.isStakedActor(); err != nil {
 			return err
-		}
-
-		added, removed := oldPeerList.Delta(updatedPeerstore.GetPeerList())
-		for _, add := range added {
-			if err := m.stakedActorRouter.AddPeer(add); err != nil {
+		} else if isStaked {
+			oldPeerList := m.stakedActorRouter.GetPeerstore().GetPeerList()
+			updatedPeerstore, err := m.pstoreProvider.GetStakedPeerstoreAtHeight(consensusNewHeightEvent.Height)
+			if err != nil {
 				return err
 			}
-		}
-		for _, rm := range removed {
-			if err := m.stakedActorRouter.RemovePeer(rm); err != nil {
-				return err
+
+			added, removed := oldPeerList.Delta(updatedPeerstore.GetPeerList())
+			for _, add := range added {
+				if err := m.stakedActorRouter.AddPeer(add); err != nil {
+					return err
+				}
+			}
+			for _, rm := range removed {
+				if err := m.stakedActorRouter.RemovePeer(rm); err != nil {
+					return err
+				}
 			}
 		}
 
