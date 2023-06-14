@@ -381,7 +381,7 @@ func testRainTreeCalls(t *testing.T, origNode string, networkSimulationConfig Te
 		// TODO_THIS_COMMIT: consider using BusEventHandler instead...
 		sURL := strings.Clone(serviceURL)
 		mod := *(p2pMod.(*p2p.P2PModule))
-		mod.GetRainTreeRouter().HandlerProxy(t, func(origHandler typesP2P.RouterHandler) typesP2P.RouterHandler {
+		mod.GetRainTreeRouter().HandlerProxy(t, func(origHandler typesP2P.MessageHandler) typesP2P.MessageHandler {
 			return func(data []byte) error {
 				log.Printf("[valID: %s] Read\n", sURL)
 				wg.Done()

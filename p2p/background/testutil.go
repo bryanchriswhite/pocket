@@ -12,7 +12,7 @@ import (
 type BackgroundRouter = backgroundRouter
 
 // TOOD_THIS_COMMIT: move & dedup
-type routerHandlerProxyFactory = generics_testutil.ProxyFactory[typesP2P.RouterHandler]
+type routerHandlerProxyFactory = generics_testutil.ProxyFactory[typesP2P.MessageHandler]
 
 func (rtr *backgroundRouter) HandlerProxy(
 	t gocuke.TestingT,
@@ -23,4 +23,3 @@ func (rtr *backgroundRouter) HandlerProxy(
 	// pass original handler to proxy factory & replace it with the proxy
 	rtr.handler = handlerProxyFactory(rtr.handler)
 }
-
