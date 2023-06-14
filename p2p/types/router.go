@@ -32,4 +32,5 @@ type MessageHandler func(data []byte) error
 // given configuration's validity.
 type RouterConfig interface {
 	IsValid() error
+	//GetHost() libp2pHost.Host
 }
