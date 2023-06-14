@@ -5,12 +5,10 @@ package background
 import (
 	"context"
 	"fmt"
-	libp2pNetwork "github.com/libp2p/go-libp2p/core/network"
-	"io"
-
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	libp2pHost "github.com/libp2p/go-libp2p/core/host"
+	"github.com/pokt-network/pocket/p2p/unicast"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/pokt-network/pocket/logger"
@@ -35,6 +33,7 @@ type backgroundRouterFactory = modules.FactoryWithConfig[typesP2P.Router, *confi
 // backgroundRouter implements `typesP2P.Router` for use with all P2P participants.
 type backgroundRouter struct {
 	base_modules.IntegratableModule
+	unicast.UnicastRouter
 
 	logger *modules.Logger
 	// handler is the function to call when a message is received.
@@ -91,8 +90,6 @@ func (*backgroundRouter) Create(bus modules.Bus, cfg *config.BackgroundConfig) (
 	if err := rtr.setupDependencies(ctx, cfg); err != nil {
 		return nil, err
 	}
-
-	rtr.host.SetStreamHandler(protocol.RaintreeProtocolID, rtr.handleStream)
 
 	go rtr.readSubscription(ctx)
 
@@ -175,7 +172,29 @@ func (rtr *backgroundRouter) Close() error {
 	return nil
 }
 
+func (rtr *backgroundRouter) setupUnicastRouter() error {
+	unicastRouterCfg := config.UnicastRouterConfig{
+		Logger:         rtr.logger,
+		Host:           rtr.host,
+		ProtocolID:     protocol.BackgroundProtocolID,
+		MessageHandler: rtr.handleBackgroundMsg,
+		PeerHandler:    rtr.AddPeer,
+	}
+
+	unicastRouter, err := unicast.Create(rtr.GetBus(), &unicastRouterCfg)
+	if err != nil {
+		return fmt.Errorf("setting up unicast router: %w", err)
+	}
+
+	rtr.UnicastRouter = *unicastRouter
+	return nil
+}
+
 func (rtr *backgroundRouter) setupDependencies(ctx context.Context, cfg *config.BackgroundConfig) error {
+	if err := rtr.setupUnicastRouter(); err != nil {
+		return err
+	}
+
 	if err := rtr.setupPeerDiscovery(ctx); err != nil {
 		return fmt.Errorf("setting up peer discovery: %w", err)
 	}
@@ -193,6 +212,7 @@ func (rtr *backgroundRouter) setupDependencies(ctx context.Context, cfg *config.
 	}
 
 	if err := rtr.setupPeerstore(
+		ctx,
 		cfg.PeerstoreProvider,
 		cfg.CurrentHeightProvider,
 	); err != nil {
@@ -202,6 +222,7 @@ func (rtr *backgroundRouter) setupDependencies(ctx context.Context, cfg *config.
 }
 
 func (rtr *backgroundRouter) setupPeerstore(
+	ctx context.Context,
 	pstoreProvider providers.PeerstoreProvider,
 	currentHeightProvider providers.CurrentHeightProvider,
 ) (err error) {
@@ -235,8 +256,7 @@ func (rtr *backgroundRouter) setupPeerstore(
 			return nil
 		}
 
-		// TECHDEBT(#595): add ctx to interface methods and propagate down.
-		if err := rtr.host.Connect(context.TODO(), libp2pPeer); err != nil {
+		if err := rtr.host.Connect(ctx, libp2pPeer); err != nil {
 			return fmt.Errorf("connecting to peer: %w", err)
 		}
 	}
@@ -250,7 +270,6 @@ func (rtr *backgroundRouter) setupPeerDiscovery(ctx context.Context) (err error)
 		dhtMode = dht.ModeClient
 	}
 
-	// TECHDEBT(#595): add ctx to interface methods and propagate down.
 	rtr.kadDHT, err = dht.New(ctx, rtr.host, dht.Mode(dhtMode))
 	return err
 }
@@ -286,75 +305,6 @@ func (rtr *backgroundRouter) setupSubscription() (err error) {
 	// (see: https://pkg.go.dev/github.com/libp2p/go-libp2p-pubsub#WithBufferSize)
 	rtr.subscription, err = rtr.topic.Subscribe()
 	return err
-}
-
-// TODO_THIS_COMMIT: consider moving this to `baseRouter` to de-dup
-//
-// handleStream ensures the peerstore contains the remote peer and then reads
-// the incoming stream in a new go routine.
-func (rtr *backgroundRouter) handleStream(stream libp2pNetwork.Stream) {
-	rtr.logger.Debug().Msg("handling incoming stream")
-	peer, err := utils.PeerFromLibp2pStream(stream)
-	if err != nil {
-		rtr.logger.Error().Err(err).
-			Str("address", peer.GetAddress().String()).
-			Msg("parsing remote peer identity")
-
-		if err = stream.Reset(); err != nil {
-			rtr.logger.Error().Err(err).Msg("resetting stream")
-		}
-		return
-	}
-
-	if err := rtr.AddPeer(peer); err != nil {
-		rtr.logger.Error().Err(err).
-			Str("address", peer.GetAddress().String()).
-			Msg("adding remote peer to router")
-	}
-
-	go rtr.readStream(stream)
-}
-
-// readStream reads the incoming stream, extracts the serialized `PocketEnvelope`
-// data from the incoming `RainTreeMessage`, and passes it to the application by
-// calling the configured `rtr.handler`. Intended to be called in a go routine.
-func (rtr *backgroundRouter) readStream(stream libp2pNetwork.Stream) {
-	// TODO_THIS_COMMIT: cleanup --v
-
-	// Time out if no data is sent to free resources.
-	// NB: tests using libp2p's `mocknet` rely on this not returning an error.
-	//if err := stream.SetReadDeadline(newReadStreamDeadline()); err != nil {
-	//	// `SetReadDeadline` not supported by `mocknet` streams.
-	//	rtr.logger.Error().Err(err).Msg("setting stream read deadline")
-	//}
-
-	// log incoming stream
-	//rtr.logStream(stream)
-
-	// TODO_THIS_COMMIT: cleanup --^
-
-	// read stream
-	backgroundMsgBz, err := io.ReadAll(stream)
-	if err != nil {
-		rtr.logger.Error().Err(err).Msg("reading from stream")
-		if err := stream.Reset(); err != nil {
-			rtr.logger.Error().Err(err).Msg("resetting stream (read-side)")
-		}
-		return
-	}
-
-	// done reading; reset to signal this to remote peer
-	// NB: failing to reset the stream can easily max out the number of available
-	// network connections on the receiver's side.
-	if err := stream.Reset(); err != nil {
-		rtr.logger.Error().Err(err).Msg("resetting stream (read-side)")
-	}
-
-	// extract `PocketEnvelope` from `RainTreeMessage` (& continue propagation)
-	if err := rtr.handleBackgroundMsg(backgroundMsgBz); err != nil {
-		rtr.logger.Error().Err(err).Msg("handling raintree message")
-		return
-	}
 }
 
 func (rtr *backgroundRouter) readSubscription(ctx context.Context) {
