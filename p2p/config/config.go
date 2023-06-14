@@ -58,6 +58,7 @@ type RainTreeConfig struct {
 	CurrentHeightProvider providers.CurrentHeightProvider
 	PeerstoreProvider     providers.PeerstoreProvider
 	Handler               func(data []byte) error
+	BootstrapNodes        []string
 }
 
 // IsValid implements the respective member of the `RouterConfig` interface.
