@@ -4,15 +4,10 @@ import (
 	"context"
 	"encoding/csv"
 	"fmt"
-	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
 
-	rpcCHP "github.com/pokt-network/pocket/p2p/providers/current_height_provider/rpc"
-	rpcABP "github.com/pokt-network/pocket/p2p/providers/peerstore_provider/rpc"
-	typesP2P "github.com/pokt-network/pocket/p2p/types"
-	"github.com/pokt-network/pocket/rpc"
 	"github.com/pokt-network/pocket/runtime/defaults"
 )
 
@@ -43,48 +38,16 @@ func (m *p2pModule) configureBootstrapNodes() error {
 
 // bootstrap attempts to bootstrap from a bootstrap node
 func (m *p2pModule) bootstrap() error {
-	var pstore typesP2P.Peerstore
-
-	for _, bootstrapNode := range m.bootstrapNodes {
-		m.logger.Info().Str("endpoint", bootstrapNode).Msg("Attempting to bootstrap from bootstrap node")
-
-		client, err := rpc.NewClientWithResponses(bootstrapNode)
-		if err != nil {
-			continue
+	if isStaked, err := m.isStakedActor(); err != nil {
+		return err
+	} else if isStaked {
+		// TECHDEBT(#595): add ctx to interface methods and propagate down.
+		if err := m.stakedActorRouter.Bootstrap(
+			context.TODO(),
+			m.cfg.MaxBootstrapConcurrency,
+		); err != nil {
+			return err
 		}
-		healthCheck, err := client.GetV1Health(context.TODO())
-		if err != nil || healthCheck == nil || healthCheck.StatusCode != http.StatusOK {
-			m.logger.Warn().Str("bootstrapNode", bootstrapNode).Msg("Error getting a green health check from bootstrap node")
-			continue
-		}
-
-		pstoreProvider := rpcABP.Create(
-			rpcABP.WithP2PConfig(
-				m.GetBus().GetRuntimeMgr().GetConfig().P2P,
-			),
-			rpcABP.WithCustomRPCURL(bootstrapNode),
-		)
-
-		currentHeightProvider := rpcCHP.NewRPCCurrentHeightProvider(rpcCHP.WithCustomRPCURL(bootstrapNode))
-
-		pstore, err = pstoreProvider.GetStakedPeerstoreAtHeight(currentHeightProvider.CurrentHeight())
-		if err != nil {
-			m.logger.Warn().Err(err).Str("endpoint", bootstrapNode).Msg("Error getting address book from bootstrap node")
-			continue
-		}
-	}
-
-	for _, peer := range pstore.GetPeerList() {
-		m.logger.Debug().Str("address", peer.GetAddress().String()).Msg("Adding peer to router")
-		if err := m.router.AddPeer(peer); err != nil {
-			m.logger.Error().Err(err).
-				Str("pokt_address", peer.GetAddress().String()).
-				Msg("adding peer")
-		}
-	}
-
-	if m.router.GetPeerstore().Size() == 0 {
-		return fmt.Errorf("bootstrap failed")
 	}
 	return nil
 }

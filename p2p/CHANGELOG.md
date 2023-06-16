@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.0.56] - 2023-04-19
+
+- Refactored P2P bootstrapping to its own go routine
+- Always bootstrap peerstore to discover non-staked P2P participants
+
 ## [0.0.0.55] - 2023-06-13
 
 - Replaced `RPC_HOST` with `POCKET_REMOTE_CLI_URL` or `--pocket-remote-cli-url` where appropriate
