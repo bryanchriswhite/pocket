@@ -180,6 +180,12 @@ func (rtr *backgroundRouter) Close() error {
 	return nil
 }
 
+func (rtr *backgroundRouter) Bootstrap(_ context.Context, _ uint32) error {
+	// NB: this implementation is a noop as rtr.KadDHT automatically bootstraps
+	// continuously upon instantiation. See `backgroundRouter#setupPeerDiscovery()`.
+	return nil
+}
+
 func (rtr *backgroundRouter) setupUnicastRouter() error {
 	unicastRouterCfg := config.UnicastRouterConfig{
 		Logger:         rtr.logger,

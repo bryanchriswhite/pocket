@@ -14,6 +14,7 @@ import (
 type Router interface {
 	modules.IntegratableModule
 
+	Bootstrap(ctx context.Context, maxConcurrency uint32) error
 	Broadcast(data []byte) error
 	Send(data []byte, address cryptoPocket.Address) error
 	Close() error
