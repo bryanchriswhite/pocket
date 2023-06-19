@@ -9,9 +9,12 @@ import (
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	libp2pHost "github.com/libp2p/go-libp2p/core/host"
+	"google.golang.org/protobuf/proto"
+
 	"github.com/pokt-network/pocket/logger"
 	"github.com/pokt-network/pocket/p2p/config"
 	"github.com/pokt-network/pocket/p2p/protocol"
+	"github.com/pokt-network/pocket/p2p/providers"
 	typesP2P "github.com/pokt-network/pocket/p2p/types"
 	"github.com/pokt-network/pocket/p2p/utils"
 	cryptoPocket "github.com/pokt-network/pocket/shared/crypto"
@@ -29,6 +32,8 @@ type backgroundRouter struct {
 	base_modules.IntegratableModule
 
 	logger *modules.Logger
+	// handler is the function to call when a message is received.
+	handler typesP2P.RouterHandler
 	// host represents a libp2p network node, it encapsulates a libp2p peerstore
 	// & connection manager. `libp2p.New` configures and starts listening
 	// according to options.
@@ -47,7 +52,7 @@ type backgroundRouter struct {
 	kadDHT *dht.IpfsDHT
 	// TECHDEBT: `pstore` will likely be removed in future refactoring / simplification
 	// of the `Router` interface.
-	// pstore is the background router's peerstore.
+	// pstore is the background router's peerstore. Assigned in `backgroundRouter#setupPeerstore()`.
 	pstore typesP2P.Peerstore
 }
 
@@ -60,18 +65,8 @@ func NewBackgroundRouter(bus modules.Bus, cfg *config.BackgroundConfig) (typesP2
 	networkLogger := logger.Global.CreateLoggerForModule("backgroundRouter")
 	networkLogger.Info().Msg("Initializing background router")
 
-	// seed initial peerstore with current on-chain peer info (i.e. staked actors)
-	pstore, err := cfg.PeerstoreProvider.GetStakedPeerstoreAtHeight(
-		cfg.CurrentHeightProvider.CurrentHeight(),
-	)
-	if err != nil {
+	if err := cfg.IsValid(); err != nil {
 		return nil, err
-	}
-
-	// CONSIDERATION: If switching to `NewRandomSub`, there will be a max size
-	gossipSub, err := pubsub.NewGossipSub(ctx, cfg.Host)
-	if err != nil {
-		return nil, fmt.Errorf("creating gossip pubsub: %w", err)
 	}
 
 	dhtMode := dht.ModeAutoServer
@@ -85,6 +80,31 @@ func NewBackgroundRouter(bus modules.Bus, cfg *config.BackgroundConfig) (typesP2
 		return nil, fmt.Errorf("creating DHT: %w", err)
 	}
 
+	//if err := kadDHT.Bootstrap(ctx); err != nil {
+	//	return nil, fmt.Errorf("bootstrapping DHT: %w", err)
+	//}
+
+	// CONSIDERATION: If switching to `NewRandomSub`, there will be a max size
+	// TECHDEBT: integrate with go-libp2p-pubsub tracing
+	truncID := cfg.Host.ID().String()[:20]
+	jsonTracer, err := pubsub.NewJSONTracer(fmt.Sprintf("./pubsub-trace_%s.json", truncID))
+	if err != nil {
+		return nil, fmt.Errorf("creating json tracer: %w", err)
+	}
+	//pbTracer, err := pubsub.NewPBTracer("./pubsub-trace.pb")
+	//if err != nil {
+	//	return nil, fmt.Errorf("creating json tracer: %w", err)
+	//}
+
+	tracerOpt := pubsub.WithEventTracer(jsonTracer)
+	//tracerOpt := pubsub.WithEventTracer(pbTracer)
+	gossipSub, err := pubsub.NewGossipSub(ctx, cfg.Host, tracerOpt) //pubsub.WithFloodPublish(false),
+	//pubsub.WithMaxMessageSize(256),
+
+	if err != nil {
+		return nil, fmt.Errorf("creating gossip pubsub: %w", err)
+	}
+
 	topic, err := gossipSub.Join(protocol.BackgroundTopicStr)
 	if err != nil {
 		return nil, fmt.Errorf("joining background topic: %w", err)
@@ -95,7 +115,10 @@ func NewBackgroundRouter(bus modules.Bus, cfg *config.BackgroundConfig) (typesP2
 	// > output buffer. The default length is 32 but it can be configured to avoid
 	// > dropping messages if the consumer is not reading fast enough.
 	// (see: https://pkg.go.dev/github.com/libp2p/go-libp2p-pubsub#WithBufferSize)
-	subscription, err := topic.Subscribe()
+	subscription, err := topic.Subscribe(
+	//pubsub.WithBufferSize(10),
+	//pubsub.With
+	)
 	if err != nil {
 		return nil, fmt.Errorf("subscribing to background topic: %w", err)
 	}
@@ -107,16 +130,35 @@ func NewBackgroundRouter(bus modules.Bus, cfg *config.BackgroundConfig) (typesP2
 		topic:        topic,
 		subscription: subscription,
 		logger:       networkLogger,
-		pstore:       pstore,
+		handler:      cfg.Handler,
 	}
+
+	if err := rtr.setupPeerstore(
+		cfg.PeerstoreProvider,
+		cfg.CurrentHeightProvider,
+	); err != nil {
+		return nil, err
+	}
+
+	go rtr.readSubscription(ctx)
 
 	return rtr, nil
 }
 
 // Broadcast implements the respective `typesP2P.Router` interface  method.
 func (rtr *backgroundRouter) Broadcast(data []byte) error {
+	// CONSIDERATION: validate as PocketEnvelopeBz here (?)
+	// TODO_THIS_COMMIT: wrap in BackgroundMessage
+	backgroundMsg := &typesP2P.BackgroundMessage{
+		Data: data,
+	}
+	backgroundMsgBz, err := proto.Marshal(backgroundMsg)
+	if err != nil {
+		return err
+	}
+
 	// TECHDEBT(#595): add ctx to interface methods and propagate down.
-	return rtr.topic.Publish(context.TODO(), data)
+	return rtr.topic.Publish(context.TODO(), backgroundMsgBz)
 }
 
 // Send implements the respective `typesP2P.Router` interface  method.
@@ -130,11 +172,6 @@ func (rtr *backgroundRouter) Send(data []byte, address cryptoPocket.Address) err
 		return err
 	}
 	return nil
-}
-
-// HandleNetworkData implements the respective `typesP2P.Router` interface  method.
-func (rtr *backgroundRouter) HandleNetworkData(data []byte) ([]byte, error) {
-	return data, nil // intentional passthrough
 }
 
 // GetPeerstore implements the respective `typesP2P.Router` interface  method.
@@ -164,6 +201,92 @@ func (rtr *backgroundRouter) RemovePeer(peer typesP2P.Peer) error {
 	}
 
 	return rtr.pstore.RemovePeer(peer.GetAddress())
+}
+
+func (rtr *backgroundRouter) Close() error {
+	// TODO_THIS_COMMIT: why is this causing problems?
+	//rtr.subscription.Cancel()
+
+	//return multierror.Append(
+	//	rtr.topic.Close(),
+	//	rtr.kadDHT.Close(),
+	//)
+	return nil
+}
+
+func (rtr *backgroundRouter) setupPeerstore(
+	pstoreProvider providers.PeerstoreProvider,
+	currentHeightProvider providers.CurrentHeightProvider,
+) (err error) {
+	// seed initial peerstore with current on-chain peer info (i.e. staked actors)
+	rtr.pstore, err = pstoreProvider.GetStakedPeerstoreAtHeight(
+		currentHeightProvider.CurrentHeight(),
+	)
+	if err != nil {
+		return err
+	}
+
+	// CONSIDERATION: add `GetPeers` method to `PeerstoreProvider` interface
+	// to avoid this loop.
+	for _, peer := range rtr.pstore.GetPeerList() {
+		if err := utils.AddPeerToLibp2pHost(rtr.host, peer); err != nil {
+			return err
+		}
+
+		// TODO: refactor: #bootstrap()
+		libp2pPeer, err := utils.Libp2pAddrInfoFromPeer(peer)
+		if err != nil {
+			return fmt.Errorf(
+				"converting peer info, pokt address: %s: %w",
+				peer.GetAddress(),
+				err,
+			)
+		}
+
+		// don't attempt to connect to self
+		if rtr.host.ID() == libp2pPeer.ID {
+			return nil
+		}
+
+		// TECHDEBT(#595): add ctx to interface methods and propagate down.
+		if err := rtr.host.Connect(context.TODO(), libp2pPeer); err != nil {
+			return fmt.Errorf("connecting to peer: %w", err)
+		}
+	}
+	return nil
+}
+
+func (rtr *backgroundRouter) readSubscription(ctx context.Context) {
+	// TODO_THIS_COMMIT: look into "topic validaton"
+	// (see: https://github.com/libp2p/specs/tree/master/pubsub#topic-validation)
+	for {
+		msg, err := rtr.subscription.Next(ctx)
+		if ctx.Err() != nil {
+			fmt.Printf("error: %s\n", ctx.Err())
+			return
+		}
+
+		if err != nil {
+			rtr.logger.Error().Err(err).
+				Msg("error reading from background topic subscription")
+			continue
+		}
+
+		// TECHDEBT/DISCUSS: telemetry
+		if err := rtr.handleBackgroundMsg(msg.Data); err != nil {
+			rtr.logger.Error().Err(err).Msg("error handling background message")
+			continue
+		}
+	}
+}
+
+func (rtr *backgroundRouter) handleBackgroundMsg(backgroundMsgBz []byte) error {
+	var backgroundMsg typesP2P.BackgroundMessage
+	if err := proto.Unmarshal(backgroundMsgBz, &backgroundMsg); err != nil {
+		return err
+	}
+
+	return rtr.handler(backgroundMsg.Data)
 }
 
 // isClientDebugMode returns the value of `ClientDebugMode` in the base config

@@ -5,25 +5,27 @@ package p2p_test
 import (
 	runtime_testutil "github.com/pokt-network/pocket/internal/testutil/runtime"
 	telemetry_testutil "github.com/pokt-network/pocket/internal/testutil/telemetry"
+	"github.com/pokt-network/pocket/p2p"
+	typesP2P "github.com/pokt-network/pocket/p2p/types"
 	cryptoPocket "github.com/pokt-network/pocket/shared/crypto"
 	"github.com/pokt-network/pocket/shared/modules"
 	mock_modules "github.com/pokt-network/pocket/shared/modules/mocks"
+	"google.golang.org/protobuf/types/known/anypb"
 	"log"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
-
-	"github.com/regen-network/gocuke"
-	"github.com/stretchr/testify/require"
-	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/pokt-network/pocket/internal/testutil"
 	"github.com/pokt-network/pocket/internal/testutil/constructors"
 	persistence_testutil "github.com/pokt-network/pocket/internal/testutil/persistence"
 	"github.com/pokt-network/pocket/shared/messaging"
+	"github.com/regen-network/gocuke"
+	"github.com/stretchr/testify/require"
 )
 
 // TODO(#314): Add the tooling and instructions on how to generate unit tests in this file.
@@ -245,13 +247,13 @@ func testRainTreeCalls(t *testing.T, origNode string, networkSimulationConfig Te
 	//busMocks := createMockBuses(t, runtimeConfigs, &wg)
 	busEventHandlerFactory := func(t gocuke.TestingT, busMock *mock_modules.MockBus) testutil.BusEventHandler {
 		return func(data *messaging.PocketEnvelope) {
-			p2pCfg := busMock.GetRuntimeMgr().GetConfig().P2P
-
-			// `p2pModule#handleNetworkData()` calls `modules.Bus#PublishEventToBus()`
-			// assumes that P2P module is the only bus event producer running during
-			// the test.
-			t.Logf("[valId: %s:%d] Read", p2pCfg.Hostname, p2pCfg.Port)
-			wg.Done()
+			//p2pCfg := busMock.GetRuntimeMgr().GetConfig().P2P
+			//
+			//// `p2pModule#handleNetworkData()` calls `modules.Bus#PublishEventToBus()`
+			//// assumes that P2P module is the only bus event producer running during
+			//// the test.
+			//t.Logf("[valId: %s:%d] Read", p2pCfg.Hostname, p2pCfg.Port)
+			//wg.Done()
 		}
 	}
 
@@ -299,23 +301,69 @@ func testRainTreeCalls(t *testing.T, origNode string, networkSimulationConfig Te
 		wg.Add(expectedWrites)
 
 		// TODO_THIS_COMMIT:
-		//if serviceURL == origNode {
-		//	...
-		//}
+		if serviceURL == origNode {
+			t.Log("SELF SEND!!!! 1")
+			t.Log("SELF SEND!!!! 2")
+			t.Log("SELF SEND!!!! 3")
+			//...
+		}
 
 		// TODO_THIS_COMMIT: MOVE
+		// -- option 2a
 		//telemetryEventHandler := func(namespace, eventName string, labels ...any) {
 		//	t.Log("telemetry event received")
 		//	wg.Done()
 		//}
 
-		eventMetricsAgentMock := telemetry_testutil.PrepareEventMetricsAgentMock(t, serviceURL, &wg, expectedWrites)
-		busMock.GetTelemetryModule().(*mock_modules.MockTelemetryModule).EXPECT().
-			GetEventMetricsAgent().Return(eventMetricsAgentMock).AnyTimes()
+		// TODO_THIS_COMMIT: refactor
+		// -- option 1
+		//eventMetricsAgentMock := telemetry_testutil.PrepareEventMetricsAgentMock(t, serviceURL, &wg, expectedWrites)
+		//busMock.GetTelemetryModule().(*mock_modules.MockTelemetryModule).EXPECT().
+		//	GetEventMetricsAgent().Return(eventMetricsAgentMock).AnyTimes()
+
+		// option 1.5
+		eventMetricsAgentMock := busMock.
+			GetTelemetryModule().
+			GetEventMetricsAgent().(*mock_modules.MockEventMetricsAgent)
+
+		//telemetry_testutil.WithEventMetricsHandler(
+		telemetry_testutil.WhyEventMetricsAgentMock(
+			t, eventMetricsAgentMock,
+			serviceURL, &wg,
+			//telemetry.P2P_RAINTREE_MESSAGE_EVENT_METRIC_SEND_LABEL,
+			//telemetryEventHandler,
+			expectedWrites,
+		)
+		// --
 
 		_ = persistence_testutil.BasePersistenceMock(t, busMock, genesisState)
 		//telemetryMock := prepareTelemetryMock(t, busMock, serviceURL, &wg, expectedWrites)
-		//_ = telemetry_testutil.BaseTelemetryMock(t, busMock)
+
+		//telemetryMock := telemetry_testutil.WithTimeSeriesAgent(
+		//	t, telemetry_testutil.MinimalTelemetryMock(t, busMock))
+		//
+		//eventMetricsAgentMock := telemetry_testutil.EventMetricsAgentMockWithHandler(
+		//	t, telemetry.P2P_RAINTREE_MESSAGE_EVENT_METRIC_SEND_LABEL,
+		//	telemetryEventHandler,
+		//	expectedWrites,
+		//)
+		//telemetryMock.EXPECT().GetEventMetricsAgent().Return(eventMetricsAgentMock).AnyTimes()
+
+		// -- option 2b
+		//eventMetricsAgentMock := busMock.
+		//	GetTelemetryModule().
+		//	GetEventMetricsAgent().(*mock_modules.MockEventMetricsAgent)
+		//
+		////telemetry_testutil.WithEventMetricsHandler(
+		//telemetry_testutil.WhyEventMetricsAgentMock(
+		//	t, eventMetricsAgentMock,
+		//	//telemetry.P2P_RAINTREE_MESSAGE_EVENT_METRIC_SEND_LABEL,
+		//	telemetryEventHandler,
+		//	expectedWrites,
+		//)
+		// --
+
+		//telemetryMock := telemetry_testutil.BaseTelemetryMock(t, busMock)
 		//telemetryMock.GetEventMetricsAgent().(*mock_modules.MockEventMetricsAgent).EXPECT().EmitEvent(
 		//	gomock.Any(),
 		//	gomock.Any(),
@@ -326,18 +374,20 @@ func testRainTreeCalls(t *testing.T, origNode string, networkSimulationConfig Te
 	}
 
 	// Start all p2p modules
-	for _, p2pMod := range p2pModules {
+	for serviceURL, p2pMod := range p2pModules {
 		err := p2pMod.Start()
 		require.NoError(t, err)
 
-		// TODO_THIS_COMMIT: decide where to `wg.Done()`
-		//sURL := strings.Clone(serviceURL)
-		//mod := *p2pMod
-		//p2pMod.host.SetStreamHandler(protocol.PoktProtocolID, func(stream libp2pNetwork.Stream) {
-		//	log.Printf("[valID: %s] Read\n", sURL)
-		//	(&mod).router.(*raintree.RainTreeRouter).HandleStream(stream)
-		//	wg.Done()
-		//})
+		// TODO_THIS_COMMIT: consider using BusEventHandler instead...
+		sURL := strings.Clone(serviceURL)
+		mod := *(p2pMod.(*p2p.P2PModule))
+		mod.GetRainTreeRouter().HandlerProxy(t, func(origHandler typesP2P.RouterHandler) typesP2P.RouterHandler {
+			return func(data []byte) error {
+				log.Printf("[valID: %s] Read\n", sURL)
+				wg.Done()
+				return nil
+			}
+		})
 	}
 
 	// Wait for completion

@@ -63,6 +63,7 @@ func NewRainTreeRouter(bus modules.Bus, cfg *config.RainTreeConfig) (typesP2P.Ro
 }
 
 func (*rainTreeRouter) Create(bus modules.Bus, cfg *config.RainTreeConfig) (typesP2P.Router, error) {
+	// TODO_THIS_COMMIT: rename logger to support multiple routers
 	routerLogger := logger.Global.CreateLoggerForModule("router")
 	routerLogger.Info().Msg("Initializing rainTreeRouter")
 
@@ -169,7 +170,6 @@ func (rtr *rainTreeRouter) sendInternal(data []byte, address cryptoPocket.Addres
 	utils.LogOutgoingMsg(rtr.logger, hostname, peer)
 
 	if err := utils.Libp2pSendToPeer(rtr.host, data, peer); err != nil {
-		rtr.logger.Debug().Err(err).Msg("from libp2pSendInternal")
 		return err
 	}
 
@@ -211,11 +211,13 @@ func (rtr *rainTreeRouter) handleRainTreeMsg(data []byte) ([]byte, error) {
 		return nil, err
 	}
 
+	// TECHDEBT(#763): refactor as "pre-propagation validation"
 	networkMessage := messaging.PocketEnvelope{}
 	if err := proto.Unmarshal(rainTreeMsg.Data, &networkMessage); err != nil {
 		rtr.logger.Error().Err(err).Msg("Error decoding network message")
 		return nil, err
 	}
+	// --
 
 	// Continue RainTree propagation
 	if rainTreeMsg.Level > 0 {
@@ -268,6 +270,10 @@ func (rtr *rainTreeRouter) RemovePeer(peer typesP2P.Peer) error {
 // broadcast to.
 func (rtr *rainTreeRouter) Size() int {
 	return rtr.peersManager.GetPeerstore().Size()
+}
+
+func (rtr *rainTreeRouter) Close() error {
+	return nil
 }
 
 // handleStream ensures the peerstore contains the remote peer and then reads
@@ -359,6 +365,20 @@ func (rtr *rainTreeRouter) setupDependencies() error {
 	if err := rtr.setupPeerManager(pstore); err != nil {
 		return err
 	}
+
+	// TODO: remove me
+	//debugFieldsMap := map[string]any{"selfPeerID": rtr.host.ID()}
+	//for _, peer := range pstore.GetPeerList() {
+	//	peerInfo, err := utils.Libp2pAddrInfoFromPeer(peer)
+	//	if err != nil {
+	//		panic(err)
+	//	}
+	//
+	//	debugFieldsMap[peerInfo.ID.String()] = peer.GetAddress().String()
+	//}
+	//
+	//rtr.logger.Debug().Fields(debugFieldsMap).Msg("peer IDs to pocket addresses")
+	// END TODO
 
 	if err := utils.PopulateLibp2pHost(rtr.host, pstore); err != nil {
 		return err

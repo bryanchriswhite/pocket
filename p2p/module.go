@@ -3,7 +3,10 @@ package p2p
 import (
 	"errors"
 	"fmt"
+	"go.uber.org/multierr"
+	"sync/atomic"
 
+	"github.com/hashicorp/go-multierror"
 	"github.com/libp2p/go-libp2p"
 	libp2pHost "github.com/libp2p/go-libp2p/core/host"
 	"github.com/multiformats/go-multiaddr"
@@ -11,6 +14,7 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/pokt-network/pocket/logger"
+	"github.com/pokt-network/pocket/p2p/background"
 	"github.com/pokt-network/pocket/p2p/config"
 	"github.com/pokt-network/pocket/p2p/providers"
 	"github.com/pokt-network/pocket/p2p/providers/current_height_provider"
@@ -35,6 +39,7 @@ var _ modules.P2PModule = &p2pModule{}
 type p2pModule struct {
 	base_modules.IntegratableModule
 
+	started        atomic.Bool
 	address        cryptoPocket.Address
 	logger         *modules.Logger
 	options        []modules.ModuleOption
@@ -49,8 +54,9 @@ type p2pModule struct {
 	nonceDeduper          *mempool.GenericFIFOSet[uint64, uint64]
 
 	// Assigned during `#Start()`. TLDR; `host` listens on instantiation.
-	// and `router` depends on `host`.
-	router typesP2P.Router
+	// `stakedActorRouter` and `unstakedActorRouter` depends on `host`.
+	stakedActorRouter   typesP2P.Router
+	unstakedActorRouter typesP2P.Router
 	// host represents a libp2p network node, it encapsulates a libp2p peerstore
 	// & connection manager. `libp2p.New` configures and starts listening
 	// according to options. Assigned via `#Start()` (starts on instantiation).
@@ -137,8 +143,12 @@ func (m *p2pModule) GetModuleName() string {
 }
 
 // Start instantiates and assigns `m.host`, unless one already exists, and
-// `m.router` (which depends on `m.host` as a required config field).
+// `m.stakedActorRouter` (which depends on `m.host` as a required config field).
 func (m *p2pModule) Start() (err error) {
+	if !m.started.CompareAndSwap(false, true) {
+		return fmt.Errorf("p2p module already started")
+	}
+
 	m.GetBus().
 		GetTelemetryModule().
 		GetTimeSeriesAgent().
@@ -162,9 +172,15 @@ func (m *p2pModule) Start() (err error) {
 		}
 	}
 
-	if err := m.setupRouter(); err != nil {
-		return fmt.Errorf("setting up router: %w", err)
+	if err := m.setupRouters(); err != nil {
+		return fmt.Errorf("setting up routers: %w", err)
 	}
+
+	// TODO_THIS_COMMIT: ensure this is addressed
+	//// Don't handle incoming streams in client debug mode.
+	//if !m.isClientDebugMode() {
+	//	m.host.SetStreamHandler(protocol.PoktProtocolID, m.handleStream)
+	//}
 
 	m.GetBus().
 		GetTelemetryModule().
@@ -174,14 +190,37 @@ func (m *p2pModule) Start() (err error) {
 }
 
 func (m *p2pModule) Stop() error {
-	err := m.host.Close()
+	if !m.started.CompareAndSwap(true, false) {
+		return fmt.Errorf("p2p module already stopped")
+	}
+
+	routerCloseErrs := multierr.Append(
+		m.unstakedActorRouter.Close(),
+		m.stakedActorRouter.Close(),
+	)
+
+	err := multierr.Append(
+		routerCloseErrs,
+		m.host.Close(),
+	)
 
 	// Don't reuse closed host, `#Start()` will re-create.
 	m.host = nil
+	m.stakedActorRouter = nil
+	m.unstakedActorRouter = nil
 	return err
 }
 
 func (m *p2pModule) Broadcast(msg *anypb.Any) error {
+	if m.stakedActorRouter == nil {
+		return fmt.Errorf("staked actor router not started")
+	}
+
+	if m.unstakedActorRouter == nil {
+		return fmt.Errorf("unstaked actor router not started")
+	}
+
+	// TODO: rename `c`
 	c := &messaging.PocketEnvelope{
 		Content: msg,
 		Nonce:   cryptoPocket.GetNonce(),
@@ -191,10 +230,15 @@ func (m *p2pModule) Broadcast(msg *anypb.Any) error {
 		return err
 	}
 
-	return m.router.Broadcast(data)
+	stakedBroadcastErr := m.stakedActorRouter.Broadcast(data)
+	unstakedBroadcastErr := m.unstakedActorRouter.Broadcast(data)
+	return multierror.Append(err, stakedBroadcastErr, unstakedBroadcastErr).ErrorOrNil()
+	//return multierror.Append(err, unstakedBroadcastErr).ErrorOrNil()
+	//return multierror.Append(err, stakedBroadcastErr).ErrorOrNil()
 }
 
 func (m *p2pModule) Send(addr cryptoPocket.Address, msg *anypb.Any) error {
+	// TODO: rename `c`
 	c := &messaging.PocketEnvelope{
 		Content: msg,
 		Nonce:   cryptoPocket.GetNonce(),
@@ -205,7 +249,8 @@ func (m *p2pModule) Send(addr cryptoPocket.Address, msg *anypb.Any) error {
 		return err
 	}
 
-	return m.router.Send(data, addr)
+	// TODO_THIS_COMMIT: send using "appropriate" router...
+	return m.stakedActorRouter.Send(data, addr)
 }
 
 // TECHDEBT(#348): Define what the node identity is throughout the codebase
@@ -292,9 +337,9 @@ func (m *p2pModule) setupNonceDeduper() error {
 	return nil
 }
 
-// setupRouter instantiates the configured router implementation.
-func (m *p2pModule) setupRouter() (err error) {
-	m.router, err = raintree.NewRainTreeRouter(
+// setupRouters instantiates the configured router implementations.
+func (m *p2pModule) setupRouters() (err error) {
+	m.stakedActorRouter, err = raintree.NewRainTreeRouter(
 		m.GetBus(),
 		&config.RainTreeConfig{
 			Addr:                  m.address,
@@ -304,7 +349,24 @@ func (m *p2pModule) setupRouter() (err error) {
 			Handler:               m.handlePocketEnvelope,
 		},
 	)
-	return err
+	if err != nil {
+		return fmt.Errorf("staked actor router: %w", err)
+	}
+
+	m.unstakedActorRouter, err = background.NewBackgroundRouter(
+		m.GetBus(),
+		&config.BackgroundConfig{
+			Addr:                  m.address,
+			CurrentHeightProvider: m.currentHeightProvider,
+			PeerstoreProvider:     m.pstoreProvider,
+			Host:                  m.host,
+			Handler:               m.handlePocketEnvelope,
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("unstaked actor router: %w", err)
+	}
+	return nil
 }
 
 // setupHost creates a new libp2p host and assignes it to `m.host`. Libp2p host
