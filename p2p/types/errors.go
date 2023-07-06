@@ -6,7 +6,8 @@ import (
 )
 
 var (
-	ErrUnknownPeer = errors.New("unknown peer")
+	ErrUnknownPeer                   = errors.New("unknown peer")
+	ErrPeerDiscoveryDebugRPCDisabled = errors.New("peer discovery debug RPC disabled")
 )
 
 func ErrUnknownEventType(msg any) error {
