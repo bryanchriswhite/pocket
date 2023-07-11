@@ -180,12 +180,41 @@ func (rtr *backgroundRouter) AddPeer(peer typesP2P.Peer) error {
 	// Noop if peer with the pokt address already exists in the peerstore.
 	// TECHDEBT: add method(s) to update peers.
 	if p := rtr.pstore.GetPeer(peer.GetAddress()); p != nil {
+		rtr.logger.Warn().
+			Str("pokt_address", peer.GetAddress().String()).
+			Msg("peer already in peerstore")
 		return nil
 	}
+
+	//addrInfo, err := utils.Libp2pAddrInfoFromPeer(peer)
+	//if err != nil {
+	//	return fmt.Errorf("converting peer to libp2p addr info: %w", err)
+	//}
+	//
+	//// TECHDEBT: revisit `isReplacable` parameter below.
+	//// see: https://github.com/libp2p/go-libp2p-kbucket/blob/v0.6.3/table.go#L192
+	//if _, err := rtr.kadDHT.RoutingTable().TryAddPeer(
+	//	addrInfo.ID,
+	//	true,
+	//	false,
+	//); err != nil {
+	//	return fmt.Errorf("adding peer to kademlia routing table: %w", err)
+	//}
 
 	if err := utils.AddPeerToLibp2pHost(rtr.host, peer); err != nil {
 		return err
 	}
+
+	//// TECHDEBT(#595): add ctx to interface methods and propagate down.
+	//peerInfo, err := utils.Libp2pAddrInfoFromPeer(peer)
+	//if err != nil {
+	//	return err
+	//}
+	//
+	//if err := rtr.host.Connect(context.TODO(), peerInfo); err != nil {
+	//	// TDOO_THIS_COMMIT: what to do?
+	//	return err
+	//}
 
 	return rtr.pstore.AddPeer(peer)
 }
@@ -297,9 +326,9 @@ func (rtr *backgroundRouter) setupPeerstore(ctx context.Context) (err error) {
 func (rtr *backgroundRouter) setupPeerDiscovery(ctx context.Context) (err error) {
 	dhtMode := dht.ModeAutoServer
 	// NB: don't act as a bootstrap node in peer discovery in client debug mode
-	if isClientDebugMode(rtr.GetBus()) {
-		dhtMode = dht.ModeClient
-	}
+	//if isClientDebugMode(rtr.GetBus()) {
+	//	dhtMode = dht.ModeClient
+	//}
 
 	rtr.kadDHT, err = dht.New(ctx, rtr.host, dht.Mode(dhtMode))
 	return err
@@ -346,6 +375,10 @@ func (rtr *backgroundRouter) setupSubscription() (err error) {
 
 // TECHDEBT(#859): integrate with `p2pModule#bootstrap()`.
 func (rtr *backgroundRouter) bootstrap(ctx context.Context) error {
+	rtr.logger.Warn().Fields(map[string]any{
+		"bootstrap_peers_count": len(rtr.pstore.GetPeerList()),
+	}).Msg("bootstrapping...")
+
 	// CONSIDERATION: add `GetPeers` method, which returns a map,
 	// to the `PeerstoreProvider` interface to simplify this loop.
 	for _, peer := range rtr.pstore.GetPeerList() {
@@ -417,6 +450,7 @@ func (rtr *backgroundRouter) topicValidator(_ context.Context, _ libp2pPeer.ID, 
 // readSubscription is a while loop for receiving and handling messages from the
 // subscription. It is intended to be called as a goroutine.
 func (rtr *backgroundRouter) readSubscription(ctx context.Context) {
+	rtr.logger.Warn().Msg("reading subscription...")
 	for {
 		if err := ctx.Err(); err != nil {
 			if err != context.Canceled {
@@ -426,6 +460,7 @@ func (rtr *backgroundRouter) readSubscription(ctx context.Context) {
 			return
 		}
 		msg, err := rtr.subscription.Next(ctx)
+		rtr.logger.Warn().Msg("next read from subscription")
 
 		if err != nil {
 			rtr.logger.Error().Err(err).
@@ -442,6 +477,7 @@ func (rtr *backgroundRouter) readSubscription(ctx context.Context) {
 }
 
 func (rtr *backgroundRouter) handleBackgroundMsg(backgroundMsgBz []byte) error {
+	rtr.logger.Warn().Msg("handling background message")
 	var backgroundMsg typesP2P.BackgroundMessage
 	if err := proto.Unmarshal(backgroundMsgBz, &backgroundMsg); err != nil {
 		return err
@@ -450,6 +486,7 @@ func (rtr *backgroundRouter) handleBackgroundMsg(backgroundMsgBz []byte) error {
 	// There was no error, but we don't need to forward this to the app-specific bus.
 	// For example, the message has already been handled by the application.
 	if backgroundMsg.Data == nil {
+		rtr.logger.Warn().Msg("background message has no data")
 		return nil
 	}
 
