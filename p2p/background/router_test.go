@@ -22,6 +22,8 @@ import (
 	"github.com/pokt-network/pocket/internal/testutil"
 	"github.com/pokt-network/pocket/p2p/config"
 	"github.com/pokt-network/pocket/p2p/protocol"
+	"github.com/pokt-network/pocket/p2p/providers/current_height_provider"
+	"github.com/pokt-network/pocket/p2p/providers/peerstore_provider"
 	typesP2P "github.com/pokt-network/pocket/p2p/types"
 	mock_types "github.com/pokt-network/pocket/p2p/types/mocks"
 	"github.com/pokt-network/pocket/p2p/utils"
@@ -422,9 +424,14 @@ func newRouterWithSelfPeerAndHost(
 	pstoreProviderMock := mock_types.NewMockPeerstoreProvider(ctrl)
 	pstoreProviderMock.EXPECT().GetStakedPeerstoreAtHeight(gomock.Any()).Return(pstore, nil).AnyTimes()
 
+	modulesRegistryMock := mockModules.NewMockModulesRegistry(ctrl)
+	modulesRegistryMock.EXPECT().GetModule(gomock.Eq(peerstore_provider.PeerstoreProviderSubmoduleName)).Return(pstoreProviderMock, nil).AnyTimes()
+	modulesRegistryMock.EXPECT().GetModule(gomock.Eq(current_height_provider.CurrentHeightProviderSubmoduleName)).Return(consensusMock, nil).AnyTimes()
+
 	busMock := mockModules.NewMockBus(ctrl)
 	busMock.EXPECT().GetConsensusModule().Return(consensusMock).AnyTimes()
 	busMock.EXPECT().GetRuntimeMgr().Return(runtimeMgrMock).AnyTimes()
+	busMock.EXPECT().GetModulesRegistry().Return(modulesRegistryMock).AnyTimes()
 
 	err := pstore.AddPeer(selfPeer)
 	require.NoError(t, err)
@@ -434,11 +441,9 @@ func newRouterWithSelfPeerAndHost(
 	}
 
 	router, err := Create(busMock, &config.BackgroundConfig{
-		Addr:                  selfPeer.GetAddress(),
-		PeerstoreProvider:     pstoreProviderMock,
-		CurrentHeightProvider: consensusMock,
-		Host:                  host,
-		Handler:               handler,
+		Addr:    selfPeer.GetAddress(),
+		Host:    host,
+		Handler: handler,
 	})
 	require.NoError(t, err)
 
