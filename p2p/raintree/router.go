@@ -49,7 +49,7 @@ type rainTreeRouter struct {
 	currentHeightProvider providers.CurrentHeightProvider
 }
 
-func NewRainTreeRouter(bus modules.Bus, cfg *config.RainTreeConfig) (typesP2P.Router, error) {
+func Create(bus modules.Bus, cfg *config.RainTreeConfig) (typesP2P.Router, error) {
 	return new(rainTreeRouter).Create(bus, cfg)
 }
 
@@ -67,7 +67,7 @@ func (*rainTreeRouter) Create(bus modules.Bus, cfg *config.RainTreeConfig) (type
 		logger:                rainTreeLogger,
 		handler:               cfg.Handler,
 	}
-	rtr.SetBus(bus)
+	bus.RegisterModule(rtr)
 
 	height := rtr.currentHeightProvider.CurrentHeight()
 	pstore, err := rtr.pstoreProvider.GetStakedPeerstoreAtHeight(height)
@@ -91,6 +91,10 @@ func (*rainTreeRouter) Create(bus modules.Bus, cfg *config.RainTreeConfig) (type
 
 func (rtr *rainTreeRouter) Close() error {
 	return nil
+}
+
+func (rtr *rainTreeRouter) GetModuleName() string {
+	return typesP2P.StakedActorRouterSubmoduleName
 }
 
 // NetworkBroadcast implements the respective member of `typesP2P.Router`.

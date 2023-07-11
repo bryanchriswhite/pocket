@@ -20,6 +20,7 @@ import (
 	mocksP2P "github.com/pokt-network/pocket/p2p/types/mocks"
 	"github.com/pokt-network/pocket/runtime/configs"
 	cryptoPocket "github.com/pokt-network/pocket/shared/crypto"
+	"github.com/pokt-network/pocket/shared/modules"
 	mockModules "github.com/pokt-network/pocket/shared/modules/mocks"
 )
 
@@ -94,6 +95,9 @@ func TestRainTree_Peerstore_HandleUpdate(t *testing.T) {
 			require.NoError(t, err)
 
 			mockBus := mockBus(ctrl)
+			mockBus.EXPECT().RegisterModule(gomock.Any()).DoAndReturn(func(m modules.Submodule) {
+				m.SetBus(mockBus)
+			}).AnyTimes()
 			pstoreProviderMock := mockPeerstoreProvider(ctrl, pstore)
 			currentHeightProviderMock := mockCurrentHeightProvider(ctrl, 0)
 
@@ -108,7 +112,7 @@ func TestRainTree_Peerstore_HandleUpdate(t *testing.T) {
 				Handler:               noopHandler,
 			}
 
-			router, err := NewRainTreeRouter(mockBus, rtCfg)
+			router, err := Create(mockBus, rtCfg)
 			require.NoError(t, err)
 
 			rainTree := router.(*rainTreeRouter)
@@ -142,7 +146,7 @@ func BenchmarkPeerstoreUpdates(b *testing.B) {
 		// {1000000000, 19},
 	}
 
-	// the test will add this arbitrary number of addresses after the initial initialization (done via NewRainTreeRouter)
+	// the test will add this arbitrary number of addresses after the initial initialization (done via Create)
 	// this is to add extra subsequent work that -should- grow linearly and it's actually going to test AddressBook updates
 	// not simply initializations.
 	numAddressesToBeAdded := 1000
@@ -176,7 +180,7 @@ func BenchmarkPeerstoreUpdates(b *testing.B) {
 				Handler:               noopHandler,
 			}
 
-			router, err := NewRainTreeRouter(mockBus, rtCfg)
+			router, err := Create(mockBus, rtCfg)
 			require.NoError(b, err)
 
 			rainTree := router.(*rainTreeRouter)
@@ -273,6 +277,9 @@ func TestRainTree_MessageTargets_TwentySevenNodes(t *testing.T) {
 func testRainTreeMessageTargets(t *testing.T, expectedMsgProp *ExpectedRainTreeMessageProp) {
 	ctrl := gomock.NewController(t)
 	busMock := mockModules.NewMockBus(ctrl)
+	busMock.EXPECT().RegisterModule(gomock.Any()).Do(func(m modules.Submodule) {
+		m.SetBus(busMock)
+	}).AnyTimes()
 	consensusMock := mockModules.NewMockConsensusModule(ctrl)
 	consensusMock.EXPECT().CurrentHeight().Return(uint64(1)).AnyTimes()
 	busMock.EXPECT().GetConsensusModule().Return(consensusMock).AnyTimes()
@@ -303,7 +310,7 @@ func testRainTreeMessageTargets(t *testing.T, expectedMsgProp *ExpectedRainTreeM
 		Handler:               noopHandler,
 	}
 
-	router, err := NewRainTreeRouter(busMock, rtCfg)
+	router, err := Create(busMock, rtCfg)
 	require.NoError(t, err)
 	rainTree := router.(*rainTreeRouter)
 

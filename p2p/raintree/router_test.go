@@ -9,12 +9,14 @@ import (
 	libp2pCrypto "github.com/libp2p/go-libp2p/core/crypto"
 	libp2pHost "github.com/libp2p/go-libp2p/core/host"
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
+	"github.com/stretchr/testify/require"
+
 	"github.com/pokt-network/pocket/p2p/config"
 	typesP2P "github.com/pokt-network/pocket/p2p/types"
 	"github.com/pokt-network/pocket/p2p/utils"
 	"github.com/pokt-network/pocket/runtime/defaults"
 	cryptoPocket "github.com/pokt-network/pocket/shared/crypto"
-	"github.com/stretchr/testify/require"
+	"github.com/pokt-network/pocket/shared/modules"
 )
 
 // TECHDEBT(#609): move & de-dup.
@@ -49,6 +51,9 @@ func TestRainTreeRouter_AddPeer(t *testing.T) {
 	expectedPStoreSize++
 
 	busMock := mockBus(ctrl)
+	busMock.EXPECT().RegisterModule(gomock.Any()).DoAndReturn(func(m modules.Submodule) {
+		m.SetBus(busMock)
+	}).AnyTimes()
 	peerstoreProviderMock := mockPeerstoreProvider(ctrl, pstore)
 	currentHeightProviderMock := mockCurrentHeightProvider(ctrl, 0)
 
@@ -60,7 +65,7 @@ func TestRainTreeRouter_AddPeer(t *testing.T) {
 		Handler:               noopHandler,
 	}
 
-	router, err := NewRainTreeRouter(busMock, rtCfg)
+	router, err := Create(busMock, rtCfg)
 	require.NoError(t, err)
 
 	rtRouter := router.(*rainTreeRouter)
@@ -123,7 +128,7 @@ func TestRainTreeRouter_RemovePeer(t *testing.T) {
 		Handler:               noopHandler,
 	}
 
-	router, err := NewRainTreeRouter(busMock, rtCfg)
+	router, err := Create(busMock, rtCfg)
 	require.NoError(t, err)
 	rainTree := router.(*rainTreeRouter)
 
