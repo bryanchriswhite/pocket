@@ -50,19 +50,15 @@ func TestRainTreeRouter_AddPeer(t *testing.T) {
 	require.NoError(t, err)
 	expectedPStoreSize++
 
-	busMock := mockBus(ctrl)
+	busMock := mockBus(ctrl, pstore)
 	busMock.EXPECT().RegisterModule(gomock.Any()).DoAndReturn(func(m modules.Submodule) {
 		m.SetBus(busMock)
 	}).AnyTimes()
-	peerstoreProviderMock := mockPeerstoreProvider(ctrl, pstore)
-	currentHeightProviderMock := mockCurrentHeightProvider(ctrl, 0)
 
 	rtCfg := &config.RainTreeConfig{
-		Host:                  host,
-		Addr:                  selfAddr,
-		PeerstoreProvider:     peerstoreProviderMock,
-		CurrentHeightProvider: currentHeightProviderMock,
-		Handler:               noopHandler,
+		Host:    host,
+		Addr:    selfAddr,
+		Handler: noopHandler,
 	}
 
 	router, err := Create(busMock, rtCfg)
@@ -117,15 +113,11 @@ func TestRainTreeRouter_RemovePeer(t *testing.T) {
 	require.NoError(t, err)
 	expectedPStoreSize++
 
-	busMock := mockBus(ctrl)
-	peerstoreProviderMock := mockPeerstoreProvider(ctrl, pstore)
-	currentHeightProviderMock := mockCurrentHeightProvider(ctrl, 0)
+	busMock := mockBus(ctrl, pstore)
 	rtCfg := &config.RainTreeConfig{
-		Host:                  host,
-		Addr:                  selfAddr,
-		PeerstoreProvider:     peerstoreProviderMock,
-		CurrentHeightProvider: currentHeightProviderMock,
-		Handler:               noopHandler,
+		Host:    host,
+		Addr:    selfAddr,
+		Handler: noopHandler,
 	}
 
 	router, err := Create(busMock, rtCfg)

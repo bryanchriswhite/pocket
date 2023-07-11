@@ -12,16 +12,11 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/golang/mock/gomock"
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/pokt-network/pocket/internal/testutil"
-	"github.com/pokt-network/pocket/p2p/providers/current_height_provider"
-	"github.com/pokt-network/pocket/p2p/providers/peerstore_provider"
-	"github.com/pokt-network/pocket/runtime"
-	mock_modules "github.com/pokt-network/pocket/shared/modules/mocks"
 )
 
 // TODO(#314): Add the tooling and instructions on how to generate unit tests in this file.
@@ -258,17 +253,10 @@ func testRainTreeCalls(t *testing.T, origNode string, networkSimulationConfig Te
 		consensusMock := prepareConsensusMock(t, busMocks[i])
 		currentHeightProviderMock := prepareCurrentHeightProviderMock(t, busMocks[i])
 
-		// TECHDEBT(#810, #796): simplify
-		modulesRegistryMock := busMocks[i].GetModulesRegistry()
-		modulesRegistryMock.(*mock_modules.MockModulesRegistry).EXPECT().
-			GetModule(gomock.Eq(current_height_provider.CurrentHeightProviderSubmoduleName)).
-			Return(currentHeightProviderMock, nil).
-			AnyTimes()
-
-		// TECHDEBT(#810, #796): simplify
-		modulesRegistryMock.(*mock_modules.MockModulesRegistry).EXPECT().
-			GetModule(peerstore_provider.PeerstoreProviderSubmoduleName).
-			Return(nil, runtime.ErrModuleNotRegistered(peerstore_provider.PeerstoreProviderSubmoduleName)).
+		busMocks[i].RegisterModule(currentHeightProviderMock)
+		busMocks[i].EXPECT().
+			GetCurrentHeightProvider().
+			Return(currentHeightProviderMock).
 			AnyTimes()
 
 		telemetryMock := prepareTelemetryMock(t, busMocks[i], valId, &readWriteWaitGroup, expectedWrites)

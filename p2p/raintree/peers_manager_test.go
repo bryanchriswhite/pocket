@@ -18,6 +18,7 @@ import (
 	"github.com/pokt-network/pocket/p2p/config"
 	typesP2P "github.com/pokt-network/pocket/p2p/types"
 	mocksP2P "github.com/pokt-network/pocket/p2p/types/mocks"
+	"github.com/pokt-network/pocket/runtime"
 	"github.com/pokt-network/pocket/runtime/configs"
 	cryptoPocket "github.com/pokt-network/pocket/shared/crypto"
 	"github.com/pokt-network/pocket/shared/modules"
@@ -94,22 +95,18 @@ func TestRainTree_Peerstore_HandleUpdate(t *testing.T) {
 			})
 			require.NoError(t, err)
 
-			mockBus := mockBus(ctrl)
+			mockBus := mockBus(ctrl, pstore)
 			mockBus.EXPECT().RegisterModule(gomock.Any()).DoAndReturn(func(m modules.Submodule) {
 				m.SetBus(mockBus)
 			}).AnyTimes()
-			pstoreProviderMock := mockPeerstoreProvider(ctrl, pstore)
-			currentHeightProviderMock := mockCurrentHeightProvider(ctrl, 0)
 
 			libp2pMockNet, err := mocknet.WithNPeers(1)
 			require.NoError(t, err)
 
 			rtCfg := &config.RainTreeConfig{
-				Host:                  libp2pMockNet.Hosts()[0],
-				Addr:                  pubKey.Address(),
-				PeerstoreProvider:     pstoreProviderMock,
-				CurrentHeightProvider: currentHeightProviderMock,
-				Handler:               noopHandler,
+				Host:    libp2pMockNet.Hosts()[0],
+				Addr:    pubKey.Address(),
+				Handler: noopHandler,
 			}
 
 			router, err := Create(mockBus, rtCfg)
@@ -162,9 +159,7 @@ func BenchmarkPeerstoreUpdates(b *testing.B) {
 			})
 			require.NoError(b, err)
 
-			mockBus := mockBus(ctrl)
-			pstoreProviderMock := mockPeerstoreProvider(ctrl, pstore)
-			currentHeightProviderMock := mockCurrentHeightProvider(ctrl, 0)
+			mockBus := mockBus(ctrl, pstore)
 
 			libp2pPStore, err := pstoremem.NewPeerstore()
 			require.NoError(b, err)
@@ -173,11 +168,9 @@ func BenchmarkPeerstoreUpdates(b *testing.B) {
 			hostMock.EXPECT().Peerstore().Return(libp2pPStore).AnyTimes()
 
 			rtCfg := &config.RainTreeConfig{
-				Host:                  hostMock,
-				Addr:                  pubKey.Address(),
-				PeerstoreProvider:     pstoreProviderMock,
-				CurrentHeightProvider: currentHeightProviderMock,
-				Handler:               noopHandler,
+				Host:    hostMock,
+				Addr:    pubKey.Address(),
+				Handler: noopHandler,
 			}
 
 			router, err := Create(mockBus, rtCfg)
@@ -276,9 +269,13 @@ func TestRainTree_MessageTargets_TwentySevenNodes(t *testing.T) {
 
 func testRainTreeMessageTargets(t *testing.T, expectedMsgProp *ExpectedRainTreeMessageProp) {
 	ctrl := gomock.NewController(t)
+	modulesRegistry := runtime.NewModulesRegistry()
 	busMock := mockModules.NewMockBus(ctrl)
-	busMock.EXPECT().RegisterModule(gomock.Any()).Do(func(m modules.Submodule) {
-		m.SetBus(busMock)
+	busMock.EXPECT().GetModulesRegistry().Return(modulesRegistry).AnyTimes()
+	busMock.EXPECT().RegisterModule(gomock.Any()).Do(func(arg modules.Submodule) {
+		module := arg.(modules.Submodule)
+		modulesRegistry.RegisterModule(module)
+		module.SetBus(busMock)
 	}).AnyTimes()
 	consensusMock := mockModules.NewMockConsensusModule(ctrl)
 	consensusMock.EXPECT().CurrentHeight().Return(uint64(1)).AnyTimes()
@@ -290,9 +287,15 @@ func testRainTreeMessageTargets(t *testing.T, expectedMsgProp *ExpectedRainTreeM
 	runtimeMgrMock.EXPECT().GetConfig().Return(configs.NewDefaultConfig()).AnyTimes()
 
 	mockAlphabetValidatorServiceURLsDNS(t)
+
+	// TECHDEBT(#810): simplify once `bus.GetPeerstoreProvider()` is available.
 	pstore := getAlphabetPeerstore(t, expectedMsgProp.numNodes)
 	pstoreProviderMock := mockPeerstoreProvider(ctrl, pstore)
+	busMock.RegisterModule(pstoreProviderMock)
+
 	currentHeightProviderMock := mockCurrentHeightProvider(ctrl, 1)
+
+	busMock.EXPECT().GetCurrentHeightProvider().Return(currentHeightProviderMock).AnyTimes()
 
 	libp2pPStore, err := pstoremem.NewPeerstore()
 	require.NoError(t, err)
@@ -303,11 +306,9 @@ func testRainTreeMessageTargets(t *testing.T, expectedMsgProp *ExpectedRainTreeM
 	hostMock.EXPECT().ID().Return(libp2pPeer.ID("")).AnyTimes()
 
 	rtCfg := &config.RainTreeConfig{
-		Host:                  hostMock,
-		Addr:                  []byte{expectedMsgProp.orig},
-		PeerstoreProvider:     pstoreProviderMock,
-		CurrentHeightProvider: currentHeightProviderMock,
-		Handler:               noopHandler,
+		Host:    hostMock,
+		Addr:    []byte{expectedMsgProp.orig},
+		Handler: noopHandler,
 	}
 
 	router, err := Create(busMock, rtCfg)

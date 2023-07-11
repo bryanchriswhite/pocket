@@ -400,11 +400,9 @@ func (m *p2pModule) setupStakedRouter() (err error) {
 	m.stakedActorRouter, err = raintree.Create(
 		m.GetBus(),
 		&config.RainTreeConfig{
-			Addr:                  m.address,
-			CurrentHeightProvider: m.currentHeightProvider,
-			PeerstoreProvider:     m.pstoreProvider,
-			Host:                  m.host,
-			Handler:               m.handlePocketEnvelope,
+			Addr:    m.address,
+			Host:    m.host,
+			Handler: m.handlePocketEnvelope,
 		},
 	)
 	if err != nil {
