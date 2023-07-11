@@ -329,21 +329,15 @@ func (m *p2pModule) setupPeerstoreProvider() error {
 	return nil
 }
 
-// setupCurrentHeightProvider attempts to retrieve the current height provider
-// from the bus registry, falls back to the consensus module if none is registered.
+// setupCurrentHeightProvider gets the current height provider submodule from the
+// modules registry and assigns it to `#currentHeightProvider`.
+// TECHDEBT(#810): remove once p2pModule is using the bus instead of refs for providers.
 func (m *p2pModule) setupCurrentHeightProvider() error {
 	// TECHDEBT(#810): simplify once submodules are more convenient to retrieve.
 	m.logger.Debug().Msg("setupCurrentHeightProvider")
-	currentHeightProviderModule, err := m.GetBus().GetModulesRegistry().GetModule(current_height_provider.ModuleName)
+	currentHeightProviderModule, err := m.GetBus().GetModulesRegistry().GetModule(current_height_provider.CurrentHeightProviderSubmoduleName)
 	if err != nil {
-		// TECHDEBT(#810): add a `consensusCurrentHeightProvider` submodule to wrap
-		// the consensus module usage (similar to how `persistencePeerstoreProvider`
-		// wraps persistence).
-		currentHeightProviderModule = m.GetBus().GetConsensusModule()
-	}
-
-	if currentHeightProviderModule == nil {
-		return errors.New("no current height provider or consensus module registered")
+		return err
 	}
 
 	m.logger.Debug().Msg("loaded current height provider")
@@ -353,8 +347,9 @@ func (m *p2pModule) setupCurrentHeightProvider() error {
 		return fmt.Errorf("unexpected current height provider type: %T", currentHeightProviderModule)
 	}
 
-	// TECHDEBT(#810): register the provider to the module registry instead of
-	// holding a reference in the module struct and passing via router config.
+	// TECHDEBT(#810): provider should be registered to the module registry by its
+	// constructor. Avoid holding a reference in the module struct and passing via
+	// router config.
 	m.currentHeightProvider = currentHeightProvider
 
 	return nil

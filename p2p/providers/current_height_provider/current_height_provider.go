@@ -4,11 +4,10 @@ package current_height_provider
 
 import "github.com/pokt-network/pocket/shared/modules"
 
-const ModuleName = "current_height_provider"
+const CurrentHeightProviderSubmoduleName = "current_height_provider"
 
 type CurrentHeightProvider interface {
-	modules.IntegrableModule
-	modules.InterruptableModule
+	modules.Submodule
 
 	CurrentHeight() uint64
 }
