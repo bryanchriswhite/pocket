@@ -10,6 +10,7 @@ import (
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	libp2pHost "github.com/libp2p/go-libp2p/core/host"
 	libp2pPeer "github.com/libp2p/go-libp2p/core/peer"
+	"github.com/multiformats/go-multiaddr"
 	"go.uber.org/multierr"
 	"google.golang.org/protobuf/proto"
 
@@ -353,25 +354,36 @@ func (rtr *backgroundRouter) bootstrap(ctx context.Context) error {
 	// to the `PeerstoreProvider` interface to simplify this loop.
 	for _, peer := range rtr.pstore.GetPeerList() {
 		if err := utils.AddPeerToLibp2pHost(rtr.host, peer); err != nil {
-			return err
+			rtr.logger.Error().Err(err).Msg("adding peer to libp2p host")
+			continue
 		}
 
 		libp2pAddrInfo, err := utils.Libp2pAddrInfoFromPeer(peer)
 		if err != nil {
-			return fmt.Errorf(
-				"converting peer info, pokt address: %s: %w",
-				peer.GetAddress(),
-				err,
-			)
+			rtr.logger.Error().Err(err).Msg("converting peer info")
+			continue
 		}
 
 		// don't attempt to connect to self
 		if rtr.host.ID() == libp2pAddrInfo.ID {
-			return nil
+			rtr.logger.Debug().Msg("not bootstrapping against self")
+			continue
 		}
 
+		// TODO_THIS_COMMIT: refactor and explain
+		// CONSIDERATION: could we do this (always) in `utils.Libp2pAddrInfoFromPeer`?
+		p2pMultiAddrStr := fmt.Sprintf("%s/p2p/%s", libp2pAddrInfo.Addrs[0], libp2pAddrInfo.ID.String())
+		p2pMultiAddr, err := multiaddr.NewMultiaddr(p2pMultiAddrStr)
+		libp2pAddrInfo.Addrs[0] = p2pMultiAddr
+		//--
+
+		rtr.logger.Warn().Fields(map[string]any{
+			"peer_id":   libp2pAddrInfo.ID.String(),
+			"peer_addr": libp2pAddrInfo.Addrs[0].String(),
+		}).Msg("connecting to peer")
 		if err := rtr.host.Connect(ctx, libp2pAddrInfo); err != nil {
-			return fmt.Errorf("connecting to peer: %w", err)
+			rtr.logger.Error().Err(err).Msg("connecting to bootstrap peer")
+			continue
 		}
 	}
 	return nil
