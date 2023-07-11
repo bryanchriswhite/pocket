@@ -12,6 +12,9 @@ var (
 	unstakedFlag,
 	localFlag bool
 
+	// TODO_THIS_COMMIT: remove
+	broadcastFlag bool
+
 	PeerCmd = &cobra.Command{
 		Use:               "peer",
 		Short:             "Manage peers",
@@ -24,4 +27,7 @@ func init() {
 	PeerCmd.PersistentFlags().BoolVarP(&stakedFlag, "staked", "s", false, "operations only apply to staked router peerstore (i.e. raintree)")
 	PeerCmd.PersistentFlags().BoolVarP(&unstakedFlag, "unstaked", "u", false, "operations only apply to unstaked router peerstore (i.e. gossipsub)")
 	PeerCmd.PersistentFlags().BoolVarP(&localFlag, "local", "l", false, "operations apply to the local (CLI binary's) P2P module rather than being sent to the --remote_cli_url")
+
+	// TODO_THIS_COMMIT: remove
+	PeerCmd.PersistentFlags().BoolVarP(&broadcastFlag, "broadcast", "b", false, "use unstaked router broadcast - TODO: remove this flag")
 }
