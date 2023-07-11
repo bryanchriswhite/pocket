@@ -37,7 +37,10 @@ func FetchPeerstore(cmd *cobra.Command) (types.Peerstore, error) {
 	if err != nil {
 		return nil, errors.New("retrieving peerstore provider")
 	}
-	currentHeightProvider, err := modulesRegistry.GetModule(current_height_provider.ModuleName)
+
+	// TECHDEBT(#810, #811): use `bus.GetCurrentHeightProvider()` after current
+	// height provider is retrievable as a proper submodule.
+	currentHeightProvider, err := modulesRegistry.GetModule(current_height_provider.CurrentHeightProviderSubmoduleName)
 	if err != nil {
 		return nil, errors.New("retrieving currentHeightProvider")
 	}

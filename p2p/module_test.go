@@ -9,6 +9,10 @@ import (
 	libp2pCrypto "github.com/libp2p/go-libp2p/core/crypto"
 	libp2pHost "github.com/libp2p/go-libp2p/core/host"
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
+	"github.com/stretchr/testify/require"
+
+	"github.com/pokt-network/pocket/p2p/providers/current_height_provider"
+	"github.com/pokt-network/pocket/p2p/providers/peerstore_provider"
 	typesP2P "github.com/pokt-network/pocket/p2p/types"
 	"github.com/pokt-network/pocket/p2p/utils"
 	"github.com/pokt-network/pocket/runtime/configs"
@@ -16,7 +20,6 @@ import (
 	cryptoPocket "github.com/pokt-network/pocket/shared/crypto"
 	"github.com/pokt-network/pocket/shared/modules"
 	mockModules "github.com/pokt-network/pocket/shared/modules/mocks"
-	"github.com/stretchr/testify/require"
 )
 
 // TECHDEBT(#609): move & de-dup.
@@ -120,6 +123,22 @@ func Test_Create_configureBootstrapNodes(t *testing.T) {
 			mockConsensusModule := mockModules.NewMockConsensusModule(ctrl)
 			mockConsensusModule.EXPECT().CurrentHeight().Return(uint64(1)).AnyTimes()
 			mockBus.EXPECT().GetConsensusModule().Return(mockConsensusModule).AnyTimes()
+
+			// TECHDEBT(#810, #796): simplify
+			currentHeightProviderMock := prepareCurrentHeightProviderMock(t, mockBus)
+			mockBus.GetModulesRegistry().(*mockModules.MockModulesRegistry).EXPECT().
+				GetModule(gomock.Eq(current_height_provider.CurrentHeightProviderSubmoduleName)).
+				Return(currentHeightProviderMock, nil).
+				AnyTimes()
+
+			// TECHDEBT(#810, #796): simplify
+			pstore := new(typesP2P.PeerAddrMap)
+			pstoreProviderMock := preparePeerstoreProviderMock(t, mockBus, pstore)
+			mockBus.GetModulesRegistry().(*mockModules.MockModulesRegistry).EXPECT().
+				GetModule(peerstore_provider.PeerstoreProviderSubmoduleName).
+				Return(pstoreProviderMock, nil).
+				AnyTimes()
+
 			mockRuntimeMgr.EXPECT().GetConfig().Return(&configs.Config{
 				PrivateKey: privKey.String(),
 				P2P: &configs.P2PConfig{
@@ -164,6 +183,21 @@ func TestP2pModule_WithHostOption_Restart(t *testing.T) {
 	consensusModuleMock := mockModules.NewMockConsensusModule(ctrl)
 	consensusModuleMock.EXPECT().CurrentHeight().Return(uint64(1)).AnyTimes()
 	mockBus.EXPECT().GetConsensusModule().Return(consensusModuleMock).AnyTimes()
+
+	// TECHDEBT(#810, #796): simplify
+	currentHeightProviderMock := prepareCurrentHeightProviderMock(t, mockBus)
+	mockBus.GetModulesRegistry().(*mockModules.MockModulesRegistry).EXPECT().
+		GetModule(gomock.Eq(current_height_provider.CurrentHeightProviderSubmoduleName)).
+		Return(currentHeightProviderMock, nil).
+		AnyTimes()
+
+	// TECHDEBT(#810, #796): simplify
+	pstore := new(typesP2P.PeerAddrMap)
+	pstoreProviderMock := preparePeerstoreProviderMock(t, mockBus, pstore)
+	mockBus.GetModulesRegistry().(*mockModules.MockModulesRegistry).EXPECT().
+		GetModule(peerstore_provider.PeerstoreProviderSubmoduleName).
+		Return(pstoreProviderMock, nil).
+		AnyTimes()
 
 	telemetryModuleMock := baseTelemetryMock(t, nil)
 	mockBus.EXPECT().GetTelemetryModule().Return(telemetryModuleMock).AnyTimes()
