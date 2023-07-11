@@ -5,11 +5,15 @@ import (
 	typesP2P "github.com/pokt-network/pocket/p2p/types"
 	mocksP2P "github.com/pokt-network/pocket/p2p/types/mocks"
 	"github.com/pokt-network/pocket/runtime/configs"
+	"github.com/pokt-network/pocket/shared/modules"
 	mockModules "github.com/pokt-network/pocket/shared/modules/mocks"
 )
 
 func mockBus(ctrl *gomock.Controller) *mockModules.MockBus {
 	busMock := mockModules.NewMockBus(ctrl)
+	busMock.EXPECT().RegisterModule(gomock.Any()).DoAndReturn(func(m modules.Submodule) {
+		m.SetBus(busMock)
+	}).AnyTimes()
 	busMock.EXPECT().GetPersistenceModule().Return(nil).AnyTimes()
 	consensusMock := mockModules.NewMockConsensusModule(ctrl)
 	consensusMock.EXPECT().CurrentHeight().Return(uint64(0)).AnyTimes()

@@ -216,7 +216,6 @@ func createMockBus(
 	}).AnyTimes()
 	// TECHDEBT: modules registry mock behavior should be defined separately.
 	mockModulesRegistry := mockModules.NewMockModulesRegistry(ctrl)
-	mockModulesRegistry.EXPECT().GetModule(peerstore_provider.PeerstoreProviderSubmoduleName).Return(nil, runtime.ErrModuleNotRegistered(peerstore_provider.PeerstoreProviderSubmoduleName)).AnyTimes()
 	mockBus.EXPECT().GetModulesRegistry().Return(mockModulesRegistry).AnyTimes()
 	mockBus.EXPECT().PublishEventToBus(gomock.AssignableToTypeOf(&messaging.PocketEnvelope{})).
 		Do(func(envelope *messaging.PocketEnvelope) {
@@ -291,6 +290,27 @@ func prepareCurrentHeightProviderMock(t *testing.T, busMock *mockModules.MockBus
 	busMock.RegisterModule(currentHeightProviderMock)
 
 	return currentHeightProviderMock
+}
+
+func preparePeerstoreProviderMock(
+	t *testing.T,
+	busMock *mockModules.MockBus,
+	pstore typesP2P.Peerstore,
+) *mock_types.MockPeerstoreProvider {
+	ctrl := gomock.NewController(t)
+	peerstoreProviderMock := mock_types.NewMockPeerstoreProvider(ctrl)
+	peerstoreProviderMock.EXPECT().
+		GetStakedPeerstoreAtHeight(gomock.Any()).
+		Return(pstore, nil).
+		AnyTimes()
+
+	peerstoreProviderMock.EXPECT().GetBus().Return(busMock).AnyTimes()
+	peerstoreProviderMock.EXPECT().SetBus(busMock).AnyTimes()
+	peerstoreProviderMock.EXPECT().GetModuleName().
+		Return(peerstore_provider.PeerstoreProviderSubmoduleName).
+		AnyTimes()
+
+	return peerstoreProviderMock
 }
 
 // Persistence mock - only needed for validatorMap access
