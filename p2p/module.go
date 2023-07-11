@@ -38,10 +38,13 @@ var _ modules.P2PModule = &p2pModule{}
 type p2pModule struct {
 	base_modules.IntegrableModule
 
-	started        atomic.Bool
-	address        cryptoPocket.Address
-	logger         *modules.Logger
-	options        []modules.ModuleOption
+	started atomic.Bool
+	address cryptoPocket.Address
+	logger  *modules.Logger
+	// options are processed during `#Create()`
+	options []modules.ModuleOption
+	// startOptions are processed during `#Start()`
+	startOptions   []modules.ModuleOption
 	cfg            *configs.P2PConfig
 	bootstrapNodes []string
 	identity       libp2p.Option
@@ -164,6 +167,12 @@ func (m *p2pModule) Start() (err error) {
 		}
 	}
 
+	if m.startOptions != nil {
+		for _, option := range m.startOptions {
+			option(m)
+		}
+	}
+
 	if err := m.setupRouters(); err != nil {
 		return fmt.Errorf("setting up routers: %w", err)
 	}
@@ -277,6 +286,11 @@ func (m *p2pModule) Send(addr cryptoPocket.Address, msg *anypb.Any) error {
 // TECHDEBT(#348): Define what the node identity is throughout the codebase
 func (m *p2pModule) GetAddress() (cryptoPocket.Address, error) {
 	return m.address, nil
+}
+
+// appendStartOption appends a module option to the start options.
+func (m *p2pModule) appendStartOption(opt modules.ModuleOption) {
+	m.startOptions = append(m.startOptions, opt)
 }
 
 // setupDependencies sets up the module's current height and peerstore providers.

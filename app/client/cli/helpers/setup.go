@@ -73,7 +73,8 @@ func setupRPCCurrentHeightProvider(rm runtime.Manager, rpcURL string) error {
 
 func setupAndStartP2PModule(rm runtime.Manager) {
 	bus := rm.GetBus()
-	mod, err := p2p.Create(bus)
+
+	mod, err := p2p.Create(bus, p2p.WithDebugNotifee())
 	if err != nil {
 		logger.Global.Fatal().Err(err).Msg("Failed to create p2p module")
 	}
