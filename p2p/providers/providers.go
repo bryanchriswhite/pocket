@@ -7,3 +7,5 @@ import (
 
 type PeerstoreProvider = peerstore_provider.PeerstoreProvider
 type CurrentHeightProvider = current_height_provider.CurrentHeightProvider
+
+type CurrentHeightProviderOption func(CurrentHeightProvider)
