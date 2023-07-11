@@ -48,7 +48,7 @@ type rainTreeRouter struct {
 	currentHeightProvider modules.CurrentHeightProvider
 }
 
-func NewRainTreeRouter(bus modules.Bus, cfg *config.RainTreeConfig) (typesP2P.Router, error) {
+func Create(bus modules.Bus, cfg *config.RainTreeConfig) (typesP2P.Router, error) {
 	return new(rainTreeRouter).Create(bus, cfg)
 }
 
@@ -59,17 +59,29 @@ func (*rainTreeRouter) Create(bus modules.Bus, cfg *config.RainTreeConfig) (type
 	}
 
 	rtr := &rainTreeRouter{
-		host:                  cfg.Host,
-		selfAddr:              cfg.Addr,
-		pstoreProvider:        cfg.PeerstoreProvider,
-		currentHeightProvider: cfg.CurrentHeightProvider,
-		logger:                rainTreeLogger,
-		handler:               cfg.Handler,
+		host:     cfg.Host,
+		selfAddr: cfg.Addr,
+		logger:   rainTreeLogger,
+		handler:  cfg.Handler,
 	}
-	rtr.SetBus(bus)
+	bus.RegisterModule(rtr)
 
-	height := rtr.currentHeightProvider.CurrentHeight()
-	pstore, err := rtr.pstoreProvider.GetStakedPeerstoreAtHeight(height)
+	currentHeightProvider := bus.GetCurrentHeightProvider()
+	// TECHDEBT(#810, 811): 🙄 cleanup; avoid holding a reference
+	rtr.currentHeightProvider = currentHeightProvider
+	// TECHDEBT(#810, 811): use `bus.GetPeerstoreProvider()` once available.
+	pstoreProviderModule, err := bus.GetModulesRegistry().GetModule(peerstore_provider.PeerstoreProviderSubmoduleName)
+	if err != nil {
+		return nil, err
+	}
+
+	pstoreProvider, ok := pstoreProviderModule.(peerstore_provider.PeerstoreProvider)
+	if !ok {
+		return nil, fmt.Errorf("unexpected peerstore provider module type: %T", pstoreProviderModule)
+	}
+
+	height := currentHeightProvider.CurrentHeight()
+	pstore, err := pstoreProvider.GetStakedPeerstoreAtHeight(height)
 	if err != nil {
 		return nil, fmt.Errorf("getting staked peerstore at height %d: %w", height, err)
 	}
@@ -81,7 +93,7 @@ func (*rainTreeRouter) Create(bus modules.Bus, cfg *config.RainTreeConfig) (type
 		"peerstore_size": pstore.Size(),
 	}).Msg("initializing raintree router")
 
-	if err := rtr.setupDependencies(); err != nil {
+	if err := rtr.setupDependencies(pstore); err != nil {
 		return nil, err
 	}
 
@@ -90,6 +102,10 @@ func (*rainTreeRouter) Create(bus modules.Bus, cfg *config.RainTreeConfig) (type
 
 func (rtr *rainTreeRouter) Close() error {
 	return nil
+}
+
+func (rtr *rainTreeRouter) GetModuleName() string {
+	return typesP2P.StakedActorRouterSubmoduleName
 }
 
 // NetworkBroadcast implements the respective member of `typesP2P.Router`.
@@ -317,14 +333,9 @@ func (rtr *rainTreeRouter) setupUnicastRouter() error {
 	return nil
 }
 
-func (rtr *rainTreeRouter) setupDependencies() error {
+func (rtr *rainTreeRouter) setupDependencies(pstore typesP2P.Peerstore) error {
 	if err := rtr.setupUnicastRouter(); err != nil {
 		return err
-	}
-
-	pstore, err := rtr.pstoreProvider.GetStakedPeerstoreAtHeight(rtr.currentHeightProvider.CurrentHeight())
-	if err != nil {
-		return fmt.Errorf("getting staked peerstore: %w", err)
 	}
 
 	if err := rtr.setupPeerManager(pstore); err != nil {
