@@ -17,6 +17,8 @@ import (
 	"github.com/pokt-network/pocket/p2p/config"
 	"github.com/pokt-network/pocket/p2p/protocol"
 	"github.com/pokt-network/pocket/p2p/providers"
+	"github.com/pokt-network/pocket/p2p/providers/current_height_provider"
+	"github.com/pokt-network/pocket/p2p/providers/peerstore_provider"
 	typesP2P "github.com/pokt-network/pocket/p2p/types"
 	"github.com/pokt-network/pocket/p2p/unicast"
 	"github.com/pokt-network/pocket/p2p/utils"
@@ -215,7 +217,8 @@ func (rtr *backgroundRouter) setupUnicastRouter() error {
 	return nil
 }
 
-func (rtr *backgroundRouter) setupDependencies(ctx context.Context, cfg *config.BackgroundConfig) error {
+// TECHBEDT(#810,#811): remove unused `BackgroundConfig`
+func (rtr *backgroundRouter) setupDependencies(ctx context.Context, _ *config.BackgroundConfig) error {
 	// NB: The order in which the internal components are setup below is important
 	if err := rtr.setupUnicastRouter(); err != nil {
 		return err
@@ -237,21 +240,42 @@ func (rtr *backgroundRouter) setupDependencies(ctx context.Context, cfg *config.
 		return fmt.Errorf("setting up subscription: %w", err)
 	}
 
-	if err := rtr.setupPeerstore(
-		ctx,
-		cfg.PeerstoreProvider,
-		cfg.CurrentHeightProvider,
-	); err != nil {
+	if err := rtr.setupPeerstore(ctx); err != nil {
 		return fmt.Errorf("setting up peerstore: %w", err)
 	}
 	return nil
 }
 
-func (rtr *backgroundRouter) setupPeerstore(
-	ctx context.Context,
-	pstoreProvider providers.PeerstoreProvider,
-	currentHeightProvider providers.CurrentHeightProvider,
-) (err error) {
+func (rtr *backgroundRouter) setupPeerstore(ctx context.Context) (err error) {
+	rtr.logger.Warn().Msg("setting up peerstore...")
+
+	// TECHDEBT(#810, #811): use `bus.GetPeerstoreProvider()` after peerstore provider
+	// is retrievable as a proper submodule
+	pstoreProviderModule, err := rtr.GetBus().GetModulesRegistry().
+		GetModule(peerstore_provider.PeerstoreProviderSubmoduleName)
+	if err != nil {
+		return fmt.Errorf("retrieving peerstore provider: %w", err)
+	}
+	pstoreProvider, ok := pstoreProviderModule.(providers.PeerstoreProvider)
+	if !ok {
+		return fmt.Errorf("unexpected peerstore provider type: %T", pstoreProviderModule)
+	}
+	//--
+
+	// TECHDEBT(#810, #811): use `bus.GetCurrentHeightProvider()` after current height
+	// provider is retrievable as a proper submodule
+	rtr.logger.Debug().Msg("setupCurrentHeightProvider")
+	currentHeightProviderModule, err := rtr.GetBus().GetModulesRegistry().
+		GetModule(current_height_provider.CurrentHeightProviderSubmoduleName)
+	if err != nil {
+		currentHeightProviderModule = rtr.GetBus().GetConsensusModule()
+	}
+	currentHeightProvider, ok := currentHeightProviderModule.(providers.CurrentHeightProvider)
+	if !ok {
+		return fmt.Errorf("unexpected current height provider type: %T", currentHeightProviderModule)
+	}
+	//--
+
 	// seed initial peerstore with current on-chain peer info (i.e. staked actors)
 	rtr.pstore, err = pstoreProvider.GetStakedPeerstoreAtHeight(
 		currentHeightProvider.CurrentHeight(),

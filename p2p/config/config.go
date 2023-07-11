@@ -66,17 +66,19 @@ func (cfg *baseConfig) IsValid() (err error) {
 		err = multierr.Append(err, fmt.Errorf("pokt address not configured"))
 	}
 
-	if cfg.CurrentHeightProvider == nil {
-		err = multierr.Append(err, fmt.Errorf("current height provider not configured"))
-	}
+	// TODO_THIS_COMMIT: ...
+	//if cfg.CurrentHeightProvider == nil {
+	//	err = multierr.Append(err, fmt.Errorf("current height provider not configured"))
+	//}
 
 	if cfg.Host == nil {
 		err = multierr.Append(err, fmt.Errorf("host not configured"))
 	}
 
-	if cfg.PeerstoreProvider == nil {
-		err = multierr.Append(err, fmt.Errorf("peerstore provider not configured"))
-	}
+	// TODO_THIS_COMMIT: ...
+	//if cfg.PeerstoreProvider == nil {
+	//	err = multierr.Append(err, fmt.Errorf("peerstore provider not configured"))
+	//}
 
 	if cfg.Handler == nil {
 		err = multierr.Append(err, fmt.Errorf("handler not configured"))
