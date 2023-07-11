@@ -29,9 +29,8 @@ import (
 )
 
 var (
-	_ typesP2P.Router          = &backgroundRouter{}
-	_ modules.IntegrableModule = &backgroundRouter{}
-	_ backgroundRouterFactory  = &backgroundRouter{}
+	_ typesP2P.Router         = &backgroundRouter{}
+	_ backgroundRouterFactory = &backgroundRouter{}
 )
 
 type backgroundRouterFactory = modules.FactoryWithConfig[typesP2P.Router, *config.BackgroundConfig]
@@ -95,7 +94,7 @@ func (*backgroundRouter) Create(bus modules.Bus, cfg *config.BackgroundConfig) (
 		host:                   cfg.Host,
 		cancelReadSubscription: cancel,
 	}
-	rtr.SetBus(bus)
+	bus.RegisterModule(rtr)
 
 	bgRouterLogger.Info().Fields(map[string]any{
 		"host_id":                cfg.Host.ID(),
@@ -127,6 +126,11 @@ func (rtr *backgroundRouter) Close() error {
 		topicCloseErr,
 		rtr.kadDHT.Close(),
 	)
+}
+
+// GetModuleName implements the respective `modules.Integrable` interface  method.
+func (rtr *backgroundRouter) GetModuleName() string {
+	return typesP2P.UnstakedActorRouterSubmoduleName
 }
 
 // Broadcast implements the respective `typesP2P.Router` interface  method.
