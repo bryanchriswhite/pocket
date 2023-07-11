@@ -13,8 +13,6 @@ import (
 
 	"github.com/pokt-network/pocket/internal/testutil"
 	"github.com/pokt-network/pocket/p2p/protocol"
-	"github.com/pokt-network/pocket/p2p/providers/current_height_provider"
-	"github.com/pokt-network/pocket/p2p/providers/peerstore_provider"
 	typesP2P "github.com/pokt-network/pocket/p2p/types"
 	mock_types "github.com/pokt-network/pocket/p2p/types/mocks"
 	"github.com/pokt-network/pocket/p2p/utils"
@@ -68,18 +66,12 @@ func TestP2pModule_RainTreeRouter_Insecure_Error(t *testing.T) {
 
 	// TECHDEBT(#810, #796): simplify
 	currentHeightProviderMock := prepareCurrentHeightProviderMock(t, busMock)
-	busMock.GetModulesRegistry().(*mockModules.MockModulesRegistry).EXPECT().
-		GetModule(gomock.Eq(current_height_provider.CurrentHeightProviderSubmoduleName)).
-		Return(currentHeightProviderMock, nil).
-		AnyTimes()
+	busMock.RegisterModule(currentHeightProviderMock)
 
 	// TECHDEBT(#810, #796): simplify
 	pstore := new(typesP2P.PeerAddrMap)
 	pstoreProviderMock := preparePeerstoreProviderMock(t, busMock, pstore)
-	busMock.GetModulesRegistry().(*mockModules.MockModulesRegistry).EXPECT().
-		GetModule(peerstore_provider.PeerstoreProviderSubmoduleName).
-		Return(pstoreProviderMock, nil).
-		AnyTimes()
+	busMock.RegisterModule(pstoreProviderMock)
 
 	telemetryMock.EXPECT().GetBus().Return(busMock).AnyTimes()
 	telemetryMock.EXPECT().SetBus(busMock).AnyTimes()

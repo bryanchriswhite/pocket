@@ -17,7 +17,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/pokt-network/pocket/internal/testutil"
-	"github.com/pokt-network/pocket/p2p/providers/current_height_provider"
 	"github.com/pokt-network/pocket/p2p/providers/peerstore_provider"
 	typesP2P "github.com/pokt-network/pocket/p2p/types"
 	mock_types "github.com/pokt-network/pocket/p2p/types/mocks"
@@ -277,15 +276,15 @@ func prepareConsensusMock(t *testing.T, busMock *mockModules.MockBus) *mockModul
 	return consensusMock
 }
 
-func prepareCurrentHeightProviderMock(t *testing.T, busMock *mockModules.MockBus) *mock_types.MockCurrentHeightProvider {
+func prepareCurrentHeightProviderMock(t *testing.T, busMock *mockModules.MockBus) *mockModules.MockCurrentHeightProvider {
 	ctrl := gomock.NewController(t)
-	currentHeightProviderMock := mock_types.NewMockCurrentHeightProvider(ctrl)
+	currentHeightProviderMock := mockModules.NewMockCurrentHeightProvider(ctrl)
 	currentHeightProviderMock.EXPECT().CurrentHeight().Return(uint64(1)).AnyTimes()
 
 	currentHeightProviderMock.EXPECT().GetBus().Return(busMock).AnyTimes()
 	currentHeightProviderMock.EXPECT().SetBus(busMock).AnyTimes()
 	currentHeightProviderMock.EXPECT().GetModuleName().
-		Return(current_height_provider.CurrentHeightProviderSubmoduleName).
+		Return(modules.CurrentHeightProviderSubmoduleName).
 		AnyTimes()
 	busMock.RegisterModule(currentHeightProviderMock)
 

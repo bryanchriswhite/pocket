@@ -22,7 +22,6 @@ import (
 	"github.com/pokt-network/pocket/internal/testutil"
 	"github.com/pokt-network/pocket/p2p/config"
 	"github.com/pokt-network/pocket/p2p/protocol"
-	"github.com/pokt-network/pocket/p2p/providers/current_height_provider"
 	"github.com/pokt-network/pocket/p2p/providers/peerstore_provider"
 	typesP2P "github.com/pokt-network/pocket/p2p/types"
 	mock_types "github.com/pokt-network/pocket/p2p/types/mocks"
@@ -427,7 +426,7 @@ func newRouterWithSelfPeerAndHost(
 
 	modulesRegistryMock := mockModules.NewMockModulesRegistry(ctrl)
 	modulesRegistryMock.EXPECT().GetModule(gomock.Eq(peerstore_provider.PeerstoreProviderSubmoduleName)).Return(pstoreProviderMock, nil).AnyTimes()
-	modulesRegistryMock.EXPECT().GetModule(gomock.Eq(current_height_provider.CurrentHeightProviderSubmoduleName)).Return(consensusMock, nil).AnyTimes()
+	modulesRegistryMock.EXPECT().GetModule(gomock.Eq(modules.CurrentHeightProviderSubmoduleName)).Return(consensusMock, nil).AnyTimes()
 
 	busMock := mockModules.NewMockBus(ctrl)
 	busMock.EXPECT().GetConsensusModule().Return(consensusMock).AnyTimes()

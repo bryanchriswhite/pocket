@@ -17,7 +17,6 @@ import (
 	"github.com/pokt-network/pocket/p2p/config"
 	"github.com/pokt-network/pocket/p2p/protocol"
 	"github.com/pokt-network/pocket/p2p/providers"
-	"github.com/pokt-network/pocket/p2p/providers/current_height_provider"
 	"github.com/pokt-network/pocket/p2p/providers/peerstore_provider"
 	typesP2P "github.com/pokt-network/pocket/p2p/types"
 	"github.com/pokt-network/pocket/p2p/unicast"
@@ -270,11 +269,11 @@ func (rtr *backgroundRouter) setupPeerstore(ctx context.Context) (err error) {
 	// provider is retrievable as a proper submodule
 	rtr.logger.Debug().Msg("setupCurrentHeightProvider")
 	currentHeightProviderModule, err := rtr.GetBus().GetModulesRegistry().
-		GetModule(current_height_provider.CurrentHeightProviderSubmoduleName)
+		GetModule(modules.CurrentHeightProviderSubmoduleName)
 	if err != nil {
 		currentHeightProviderModule = rtr.GetBus().GetConsensusModule()
 	}
-	currentHeightProvider, ok := currentHeightProviderModule.(providers.CurrentHeightProvider)
+	currentHeightProvider, ok := currentHeightProviderModule.(modules.CurrentHeightProvider)
 	if !ok {
 		return fmt.Errorf("unexpected current height provider type: %T", currentHeightProviderModule)
 	}

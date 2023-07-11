@@ -16,7 +16,6 @@ import (
 	"github.com/pokt-network/pocket/p2p/background"
 	"github.com/pokt-network/pocket/p2p/config"
 	"github.com/pokt-network/pocket/p2p/providers"
-	"github.com/pokt-network/pocket/p2p/providers/current_height_provider"
 	"github.com/pokt-network/pocket/p2p/providers/peerstore_provider"
 	persPSP "github.com/pokt-network/pocket/p2p/providers/peerstore_provider/persistence"
 	"github.com/pokt-network/pocket/p2p/raintree"
@@ -51,7 +50,7 @@ type p2pModule struct {
 	// holding a reference in the module struct and passing via router config.
 	//
 	// Assigned during creation via `#setupDependencies()`.
-	currentHeightProvider providers.CurrentHeightProvider
+	currentHeightProvider modules.CurrentHeightProvider
 	pstoreProvider        providers.PeerstoreProvider
 	nonceDeduper          *mempool.GenericFIFOSet[uint64, uint64]
 
@@ -312,6 +311,8 @@ func (m *p2pModule) setupPeerstoreProvider() error {
 			return err
 		}
 
+		// TECHDEBT(#810, #811): use `bus.GetPeerstoreProvider()` after peerstore provider
+		// is retrievable as a proper submodule
 		m.pstoreProvider = pstoreProvider
 		return nil
 	}
@@ -335,14 +336,14 @@ func (m *p2pModule) setupPeerstoreProvider() error {
 func (m *p2pModule) setupCurrentHeightProvider() error {
 	// TECHDEBT(#810): simplify once submodules are more convenient to retrieve.
 	m.logger.Debug().Msg("setupCurrentHeightProvider")
-	currentHeightProviderModule, err := m.GetBus().GetModulesRegistry().GetModule(current_height_provider.CurrentHeightProviderSubmoduleName)
+	currentHeightProviderModule, err := m.GetBus().GetModulesRegistry().GetModule(modules.CurrentHeightProviderSubmoduleName)
 	if err != nil {
 		return err
 	}
 
 	m.logger.Debug().Msg("loaded current height provider")
 
-	currentHeightProvider, ok := currentHeightProviderModule.(providers.CurrentHeightProvider)
+	currentHeightProvider, ok := currentHeightProviderModule.(modules.CurrentHeightProvider)
 	if !ok {
 		return fmt.Errorf("unexpected current height provider type: %T", currentHeightProviderModule)
 	}

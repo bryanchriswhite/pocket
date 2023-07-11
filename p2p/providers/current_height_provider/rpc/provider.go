@@ -7,14 +7,12 @@ import (
 	"time"
 
 	"github.com/pokt-network/pocket/app/client/cli/flags"
-	"github.com/pokt-network/pocket/p2p/providers"
-	"github.com/pokt-network/pocket/p2p/providers/current_height_provider"
 	"github.com/pokt-network/pocket/rpc"
 	"github.com/pokt-network/pocket/shared/modules"
 	"github.com/pokt-network/pocket/shared/modules/base_modules"
 )
 
-var _ current_height_provider.CurrentHeightProvider = &rpcCurrentHeightProvider{}
+var _ modules.CurrentHeightProvider = &rpcCurrentHeightProvider{}
 
 type rpcCurrentHeightProvider struct {
 	base_modules.IntegrableModule
@@ -25,16 +23,16 @@ type rpcCurrentHeightProvider struct {
 
 func Create(
 	bus modules.Bus,
-	options ...providers.CurrentHeightProviderOption,
-) (providers.CurrentHeightProvider, error) {
+	options ...modules.CurrentHeightProviderOption,
+) (modules.CurrentHeightProvider, error) {
 	return new(rpcCurrentHeightProvider).Create(bus, options...)
 }
 
 // Create implements current_height_provider.CurrentHeightProvider
 func (*rpcCurrentHeightProvider) Create(
 	bus modules.Bus,
-	options ...providers.CurrentHeightProviderOption,
-) (providers.CurrentHeightProvider, error) {
+	options ...modules.CurrentHeightProviderOption,
+) (modules.CurrentHeightProvider, error) {
 	rpcHeightProvider := &rpcCurrentHeightProvider{
 		rpcURL: flags.RemoteCLIURL,
 	}
@@ -51,7 +49,7 @@ func (*rpcCurrentHeightProvider) Create(
 
 // GetModuleName implements current_height_provider.CurrentHeightProvider
 func (*rpcCurrentHeightProvider) GetModuleName() string {
-	return current_height_provider.CurrentHeightProviderSubmoduleName
+	return modules.CurrentHeightProviderSubmoduleName
 }
 
 func (rpcCHP *rpcCurrentHeightProvider) CurrentHeight() uint64 {
@@ -82,8 +80,8 @@ func (rpcCHP *rpcCurrentHeightProvider) initRPCClient() {
 // options
 
 // WithCustomRPCURL allows to specify a custom RPC URL
-func WithCustomRPCURL(rpcURL string) providers.CurrentHeightProviderOption {
-	return func(chp providers.CurrentHeightProvider) {
+func WithCustomRPCURL(rpcURL string) modules.CurrentHeightProviderOption {
+	return func(chp modules.CurrentHeightProvider) {
 		chp.(*rpcCurrentHeightProvider).rpcURL = rpcURL
 	}
 }
