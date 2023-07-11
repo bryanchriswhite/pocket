@@ -31,6 +31,7 @@ import (
 	"github.com/pokt-network/pocket/runtime/defaults"
 	cryptoPocket "github.com/pokt-network/pocket/shared/crypto"
 	"github.com/pokt-network/pocket/shared/messaging"
+	"github.com/pokt-network/pocket/shared/modules"
 	mockModules "github.com/pokt-network/pocket/shared/modules/mocks"
 )
 
@@ -436,6 +437,9 @@ func newRouterWithSelfPeerAndHost(
 	busMock.EXPECT().GetConsensusModule().Return(consensusMock).AnyTimes()
 	busMock.EXPECT().GetRuntimeMgr().Return(runtimeMgrMock).AnyTimes()
 	busMock.EXPECT().GetModulesRegistry().Return(modulesRegistryMock).AnyTimes()
+	busMock.EXPECT().RegisterModule(gomock.Any()).DoAndReturn(func(m modules.Submodule) {
+		m.SetBus(busMock)
+	}).AnyTimes()
 
 	err := pstore.AddPeer(selfPeer)
 	require.NoError(t, err)
