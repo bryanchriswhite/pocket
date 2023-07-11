@@ -234,7 +234,7 @@ func fetchPeerstore(cmd *cobra.Command) (typesP2P.Peerstore, error) {
 	if err != nil {
 		return nil, errors.New("retrieving peerstore provider")
 	}
-	currentHeightProvider, err := modulesRegistry.GetModule(current_height_provider.ModuleName)
+	currentHeightProvider, err := modulesRegistry.GetModule(current_height_provider.CurrentHeightProviderSubmoduleName)
 	if err != nil {
 		return nil, errors.New("retrieving currentHeightProvider")
 	}
